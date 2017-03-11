@@ -38,6 +38,7 @@ var (
 	NoDataErr = errors.New("No row data")
 )
 
+// getOwnerOneAsset
 func (c *ExternalityChaincode) getOwnerOneAsset(owner string, currency string) (shim.Row, *Asset, error) {
 	var asset *Asset
 
@@ -58,6 +59,7 @@ func (c *ExternalityChaincode) getOwnerOneAsset(owner string, currency string) (
 	return row, asset, err
 }
 
+// saveReleaseLog
 func (c *ExternalityChaincode) saveReleaseLog(id string, count, now int64) error {
 	ok, err := c.stub.InsertRow(TableCurrencyReleaseLog,
 		shim.Row{
@@ -74,6 +76,7 @@ func (c *ExternalityChaincode) saveReleaseLog(id string, count, now int64) error
 	return err
 }
 
+// getCurrencyByID
 func (c *ExternalityChaincode) getCurrencyByID(id string) (shim.Row, *Currency, error) {
 	var currency *Currency
 
@@ -93,6 +96,7 @@ func (c *ExternalityChaincode) getCurrencyByID(id string) (shim.Row, *Currency, 
 	return row, currency, err
 }
 
+// saveAssignLog
 func (c *ExternalityChaincode) saveAssignLog(id, reciver string, count int64) error {
 	_, err := c.stub.InsertRow(TableCurrencyAssignLog,
 		shim.Row{
@@ -173,6 +177,7 @@ func (c *ExternalityChaincode) getLockLog(owner string, currency, order string, 
 	})
 }
 
+// getTxLogByID
 func (c *ExternalityChaincode) getTxLogByID(uuid string) (shim.Row, *Order, error) {
 	var order *Order
 	row, err := c.stub.GetRow(TableTxLog2, []shim.Column{
@@ -313,6 +318,7 @@ func (c *ExternalityChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrTyp
 	return nil, ErrType("")
 }
 
+// getTXs
 func (c *ExternalityChaincode) getTXs(owner string, srcCurrency, desCurrency, rawOrder string) ([]shim.Row, []*Order, error) {
 	rowChannel, err := c.stub.GetRows(TableTxLog, []shim.Column{
 		shim.Column{Value: &shim.Column_String_{String_: owner}},

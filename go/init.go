@@ -118,9 +118,6 @@ func (c *ExternalityChaincode) InitTable() error {
 		&shim.Column{Value: &shim.Column_String_{String_: "system"}},
 		&shim.Column{Value: &shim.Column_Int64{Int64: time.Now().Unix()}},
 	}})
-	// if !ok && err == nil {
-	// 	return fmt.Errorf("Failed initiliazing Currency CNY")
-	// }
 	if err != nil {
 		myLogger.Errorf("initTable error2:%s", err)
 		return fmt.Errorf("Failed initiliazing Currency CNY: [%s]", err)
@@ -134,9 +131,6 @@ func (c *ExternalityChaincode) InitTable() error {
 		&shim.Column{Value: &shim.Column_String_{String_: "system"}},
 		&shim.Column{Value: &shim.Column_Int64{Int64: time.Now().Unix()}},
 	}})
-	// if !ok && err == nil {
-	// 	return fmt.Errorf("Failed initiliazing Currency USD")
-	// }
 	if err != nil {
 		myLogger.Errorf("initTable error2:%s", err)
 		return fmt.Errorf("Failed initiliazing Currency USD: [%s]", err)
