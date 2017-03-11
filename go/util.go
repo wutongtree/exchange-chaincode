@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
@@ -23,6 +25,21 @@ type Currency struct {
 	Creator    string `json:"creator"`
 	CreateTime int64  `json:"createTime"`
 }
+
+// 定义批量操作的错误类型
+// CheckErr 表示校验类错误，这样应该跳过该成员，继续执行批量里的其他成员
+// WorldStateErr 表示修改worldstate类错误，此时应直接结束本次交易，批量操作全部失败
+type ErrType string
+
+const (
+	CheckErr      = ErrType("CheckErr")
+	WorldStateErr = ErrType("WdErr")
+)
+
+var (
+	ExecedErr = errors.New("execed")
+	NoDataErr = errors.New("No row data")
+)
 
 func (c *ExternalityChaincode) getOwnerOneAsset(owner string, currency string) (shim.Row, *Asset, error) {
 	var asset *Asset
@@ -91,4 +108,324 @@ func (c *ExternalityChaincode) saveAssignLog(id, reciver string, count int64) er
 		})
 
 	return err
+}
+
+// lockOrUnlockBalance lockOrUnlockBalance
+func (c *ExternalityChaincode) lockOrUnlockBalance(owner string, currency, order string, count int64, islock bool) (error, ErrType) {
+	row, asset, err := c.getOwnerOneAsset(owner, currency)
+	if err != nil {
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", currency, err), CheckErr
+	}
+	if len(row.Columns) == 0 {
+		return fmt.Errorf("The user have not currency [%s]", currency), CheckErr
+	}
+	if islock && asset.Count < count {
+		return fmt.Errorf("Currency [%s] of the user is insufficient", currency), CheckErr
+	} else if !islock && asset.LockCount < count {
+		return fmt.Errorf("Locked currency [%s] of the user is insufficient", currency), CheckErr
+	}
+
+	// 判断是否锁定过或解锁过，因为是批量操作，可能会有重复数据。其他批量操作也要作此判断
+	lockRow, err := c.getLockLog(owner, currency, order, islock)
+	if err != nil {
+		return err, CheckErr
+	}
+
+	if len(lockRow.Columns) > 0 {
+		return ExecedErr, CheckErr
+	}
+
+	if islock {
+		row.Columns[2].Value = &shim.Column_Int64{Int64: asset.Count - count}
+		row.Columns[3].Value = &shim.Column_Int64{Int64: asset.LockCount + count}
+	} else {
+		row.Columns[2].Value = &shim.Column_Int64{Int64: asset.Count + count}
+		row.Columns[3].Value = &shim.Column_Int64{Int64: asset.LockCount - count}
+	}
+
+	_, err = c.stub.ReplaceRow(TableAssets, row)
+	if err != nil {
+		return err, WorldStateErr
+	}
+
+	_, err = c.stub.InsertRow(TableAssetLockLog,
+		shim.Row{
+			Columns: []*shim.Column{
+				&shim.Column{Value: &shim.Column_String_{String_: owner}},
+				&shim.Column{Value: &shim.Column_String_{String_: currency}},
+				&shim.Column{Value: &shim.Column_String_{String_: order}},
+				&shim.Column{Value: &shim.Column_Bool{Bool: islock}},
+				&shim.Column{Value: &shim.Column_Int64{Int64: count}},
+				&shim.Column{Value: &shim.Column_Int64{Int64: time.Now().Unix()}},
+			},
+		})
+	if err != nil {
+		return err, WorldStateErr
+	}
+
+	return nil, ErrType("")
+}
+
+// getLockLog getLockLog
+func (c *ExternalityChaincode) getLockLog(owner string, currency, order string, islock bool) (shim.Row, error) {
+	return c.stub.GetRow(TableAssetLockLog, []shim.Column{
+		shim.Column{Value: &shim.Column_String_{String_: owner}},
+		shim.Column{Value: &shim.Column_String_{String_: currency}},
+		shim.Column{Value: &shim.Column_String_{String_: order}},
+		shim.Column{Value: &shim.Column_Bool{Bool: islock}},
+	})
+}
+
+func (c *ExternalityChaincode) getTxLogByID(uuid string) (shim.Row, *Order, error) {
+	var order *Order
+	row, err := c.stub.GetRow(TableTxLog2, []shim.Column{
+		shim.Column{Value: &shim.Column_String_{String_: uuid}},
+	})
+	if len(row.Columns) > 0 {
+		err = json.Unmarshal(row.Columns[1].GetBytes(), order)
+	}
+
+	return row, order, err
+}
+
+func (c *ExternalityChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrType) {
+	// 买完为止的挂单结算结余数量
+	// 挂单UUID等于原始ID时表示该单交易完成
+	if buyOrder.IsBuyAll && buyOrder.UUID == buyOrder.RawUUID {
+		unlock, err := c.computeBalance(buyOrder.Account, buyOrder.SrcCurrency, buyOrder.DesCurrency, buyOrder.RawUUID, buyOrder.FinalCost)
+		if err != nil {
+			myLogger.Errorf("execTx error1:%s", err)
+			return errors.New("Failed compute balance"), CheckErr
+		}
+		myLogger.Debugf("Order %s balance %d", buyOrder.UUID, unlock)
+		if unlock > 0 {
+			err, errType := c.lockOrUnlockBalance(buyOrder.Account, buyOrder.SrcCurrency, buyOrder.RawUUID, unlock, false)
+			if err != nil {
+				myLogger.Errorf("execTx error2:%s", err)
+				return errors.New("Failed unlock balance"), errType
+			}
+		}
+	}
+
+	// 买单源币锁定数量减少
+	buySrcRow, buySrcAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.SrcCurrency)
+	if err != nil {
+		myLogger.Errorf("execTx error3:%s", err)
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", buyOrder.SrcCurrency, err), CheckErr
+	}
+	if len(buySrcRow.Columns) == 0 {
+		return fmt.Errorf("The user have not currency [%s]", buyOrder.SrcCurrency), CheckErr
+	}
+	buySrcRow.Columns[3].Value = &shim.Column_Int64{Int64: buySrcAsset.LockCount - buyOrder.FinalCost}
+	_, err = c.stub.ReplaceRow(TableAssets, buySrcRow)
+	if err != nil {
+		myLogger.Errorf("execTx error4:%s", err)
+		return errors.New("Failed updating row"), WorldStateErr
+	}
+
+	// 买单目标币数量增加
+	buyDesRow, buyDesAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.DesCurrency)
+	if err != nil {
+		myLogger.Errorf("execTx error5:%s", err)
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", buyOrder.DesCurrency, err), CheckErr
+	}
+	if len(buyDesRow.Columns) == 0 {
+		_, err := c.stub.InsertRow(TableAssets,
+			shim.Row{
+				Columns: []*shim.Column{
+					&shim.Column{Value: &shim.Column_String_{String_: buyOrder.Account}},
+					&shim.Column{Value: &shim.Column_String_{String_: buyOrder.DesCurrency}},
+					&shim.Column{Value: &shim.Column_Int64{Int64: buyOrder.DesCount}},
+					&shim.Column{Value: &shim.Column_Int64{Int64: int64(0)}},
+				},
+			})
+		if err != nil {
+			myLogger.Errorf("execTx error6:%s", err)
+			return errors.New("Failed inserting row"), WorldStateErr
+		}
+	} else {
+		buyDesRow.Columns[2].Value = &shim.Column_Int64{Int64: buyDesAsset.Count + buyOrder.DesCount}
+		_, err = c.stub.ReplaceRow(TableAssets, buyDesRow)
+		if err != nil {
+			myLogger.Errorf("execTx error7:%s", err)
+			return errors.New("Failed updating row"), WorldStateErr
+		}
+	}
+
+	// 买完为止的挂单结算结余数量
+	// 挂单UUID等于原始ID时表示该单交易完成
+	if sellOrder.IsBuyAll && sellOrder.UUID == sellOrder.RawUUID {
+		unlock, err := c.computeBalance(sellOrder.Account, sellOrder.SrcCurrency, sellOrder.DesCurrency, sellOrder.RawUUID, sellOrder.FinalCost)
+		if err != nil {
+			myLogger.Errorf("execTx error8:%s", err)
+			return errors.New("Failed compute balance"), CheckErr
+		}
+		myLogger.Debugf("Order %s balance %d", sellOrder.UUID, unlock)
+		if unlock > 0 {
+			err, errType := c.lockOrUnlockBalance(sellOrder.Account, sellOrder.SrcCurrency, sellOrder.RawUUID, unlock, false)
+			if err != nil {
+				myLogger.Errorf("execTx error9:%s", err)
+				return errors.New("Failed unlock balance"), errType
+			}
+		}
+	}
+
+	// 卖单源币数量减少
+	sellSrcRow, sellSrcAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.SrcCurrency)
+	if err != nil {
+		myLogger.Errorf("execTx error10:%s", err)
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", sellOrder.SrcCurrency, err), CheckErr
+	}
+	if len(sellSrcRow.Columns) == 0 {
+		return fmt.Errorf("The user have not currency [%s]", sellOrder.SrcCurrency), CheckErr
+	}
+	sellSrcRow.Columns[3].Value = &shim.Column_Int64{Int64: sellSrcAsset.LockCount - sellOrder.FinalCost}
+	_, err = c.stub.ReplaceRow(TableAssets, sellSrcRow)
+	if err != nil {
+		myLogger.Errorf("execTx error11:%s", err)
+		return errors.New("Failed updating row"), WorldStateErr
+	}
+
+	// 卖单目标币数量增加
+	sellDesRow, sellDesAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.DesCurrency)
+	if err != nil {
+		myLogger.Errorf("execTx error12:%s", err)
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", sellOrder.DesCurrency, err), CheckErr
+	}
+	if len(sellDesRow.Columns) == 0 {
+		_, err = c.stub.InsertRow(TableAssets,
+			shim.Row{
+				Columns: []*shim.Column{
+					&shim.Column{Value: &shim.Column_String_{String_: sellOrder.Account}},
+					&shim.Column{Value: &shim.Column_String_{String_: sellOrder.DesCurrency}},
+					&shim.Column{Value: &shim.Column_Int64{Int64: sellOrder.DesCount}},
+					&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
+				},
+			})
+		if err != nil {
+			myLogger.Errorf("execTx error13:%s", err)
+			return errors.New("Failed inserting row"), WorldStateErr
+		}
+	} else {
+		sellDesRow.Columns[2].Value = &shim.Column_Int64{Int64: sellDesAsset.Count + sellOrder.DesCount}
+		_, err = c.stub.ReplaceRow(TableAssets, sellDesRow)
+		if err != nil {
+			myLogger.Errorf("execTx error14:%s", err)
+			return errors.New("Failed updating row"), WorldStateErr
+		}
+	}
+	return nil, ErrType("")
+}
+
+func (c *ExternalityChaincode) getTXs(owner string, srcCurrency, desCurrency, rawOrder string) ([]shim.Row, []*Order, error) {
+	rowChannel, err := c.stub.GetRows(TableTxLog, []shim.Column{
+		shim.Column{Value: &shim.Column_String_{String_: owner}},
+		shim.Column{Value: &shim.Column_String_{String_: srcCurrency}},
+		shim.Column{Value: &shim.Column_String_{String_: desCurrency}},
+		shim.Column{Value: &shim.Column_String_{String_: rawOrder}},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("getTXs operation failed. %s", err)
+	}
+
+	var rows []shim.Row
+	var orders []*Order
+	for {
+		select {
+		case row, ok := <-rowChannel:
+			if !ok {
+				rowChannel = nil
+			} else {
+				rows = append(rows, row)
+
+				order := new(Order)
+				err := json.Unmarshal(row.Columns[4].GetBytes(), order)
+				if err != nil {
+					return nil, nil, fmt.Errorf("Error unmarshaling JSON: %s", err)
+				}
+
+				orders = append(orders, order)
+			}
+		}
+		if rowChannel == nil {
+			break
+		}
+	}
+	return rows, orders, nil
+}
+
+// computeBalance
+func (c *ExternalityChaincode) computeBalance(owner string, srcCurrency, desCurrency, rawUUID string, currentCost int64) (int64, error) {
+	_, txs, err := c.getTXs(owner, srcCurrency, desCurrency, rawUUID)
+	if err != nil {
+		return 0, err
+	}
+	row, err := c.getLockLog(owner, srcCurrency, rawUUID, true)
+	if err != nil {
+		return 0, err
+	}
+	if len(row.Columns) == 0 {
+		return 0, errors.New("can't find lock log")
+	}
+
+	lock := row.Columns[4].GetInt64()
+	sumCost := int64(0)
+	for _, tx := range txs {
+		sumCost += tx.FinalCost
+	}
+
+	return lock - sumCost - currentCost, nil
+}
+
+// saveTxLog
+func (c *ExternalityChaincode) saveTxLog(buyOrder, sellOrder *Order) error {
+	buyJson, _ := json.Marshal(buyOrder)
+	sellJson, _ := json.Marshal(sellOrder)
+
+	_, err := c.stub.InsertRow(TableTxLog, shim.Row{
+		Columns: []*shim.Column{
+			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.Account}},
+			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.SrcCurrency}},
+			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.DesCurrency}},
+			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.RawUUID}},
+			&shim.Column{Value: &shim.Column_Bytes{Bytes: buyJson}},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = c.stub.InsertRow(TableTxLog2, shim.Row{
+		Columns: []*shim.Column{
+			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.UUID}},
+			&shim.Column{Value: &shim.Column_Bytes{Bytes: buyJson}},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = c.stub.InsertRow(TableTxLog, shim.Row{
+		Columns: []*shim.Column{
+			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.Account}},
+			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.SrcCurrency}},
+			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.DesCurrency}},
+			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.RawUUID}},
+			&shim.Column{Value: &shim.Column_Bytes{Bytes: sellJson}},
+		},
+	})
+	if err != nil {
+		return err
+	}
+
+	_, err = c.stub.InsertRow(TableTxLog2, shim.Row{
+		Columns: []*shim.Column{
+			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.UUID}},
+			&shim.Column{Value: &shim.Column_Bytes{Bytes: sellJson}},
+		},
+	})
+	if err != nil {
+		return err
+	}
+	return nil
 }

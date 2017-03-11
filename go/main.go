@@ -60,7 +60,12 @@ func (c *ExternalityChaincode) Invoke(stub shim.ChaincodeStubInterface, function
 		return c.release()
 	} else if function == "assign" {
 		return c.assign()
+	} else if function == "lock" {
+		return c.lock()
+	} else if function == "exchange" {
+		return c.exchange()
 	}
+
 	myLogger.Debug("Invoke Chaincode...done")
 
 	return nil, errors.New("Received unknown function invocation")
