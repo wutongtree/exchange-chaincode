@@ -18,23 +18,23 @@ type ExternalityChaincode struct {
 
 // Init is called during Deploy transaction after the container has been
 // established, allowing the chaincode to initialize its internal data
-func (e *ExternalityChaincode) Init(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+func (c *ExternalityChaincode) Init(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
 	myLogger.Debug("Init Chaincode...")
 
-	e.stub = stub
-	e.args = args
+	c.stub = stub
+	c.args = args
 
 	if len(args) != 0 {
 		return nil, errors.New("Incorrect number of arguments. Expecting 0")
 	}
 
-	err := e.CreateTable()
+	err := c.CreateTable()
 	if err != nil {
 		myLogger.Errorf("Init error [CreateTable]:%s", err)
 		return nil, err
 	}
 
-	err = e.InitTable()
+	err = c.InitTable()
 	if err != nil {
 		myLogger.Errorf("Init error [InitTable]:%s", err)
 		return nil, err
@@ -46,14 +46,20 @@ func (e *ExternalityChaincode) Init(stub shim.ChaincodeStubInterface, function s
 
 // Invoke is called for every Invoke transactions. The chaincode may change
 // its state variables
-func (e *ExternalityChaincode) Invoke(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+func (c *ExternalityChaincode) Invoke(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
 	myLogger.Debug("Invoke Chaincode...")
 
-	e.stub = stub
-	e.args = args
+	c.stub = stub
+	c.args = args
 
-	if function == "" {
-
+	if function == "initAccount" {
+		return c.initAccount()
+	} else if function == "create" {
+		return c.create()
+	} else if function == "release" {
+		return c.release()
+	} else if function == "assign" {
+		return c.assign()
 	}
 	myLogger.Debug("Invoke Chaincode...done")
 
@@ -62,11 +68,11 @@ func (e *ExternalityChaincode) Invoke(stub shim.ChaincodeStubInterface, function
 
 // Query is called for Query transactions. The chaincode may only read
 // (but not modify) its state variables and return the result
-func (e *ExternalityChaincode) Query(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
+func (c *ExternalityChaincode) Query(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
 	myLogger.Debug("Query Chaincode...")
 
-	e.stub = stub
-	e.args = args
+	c.stub = stub
+	c.args = args
 	if function == "" {
 
 	}

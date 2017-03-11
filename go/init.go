@@ -20,9 +20,9 @@ const (
 )
 
 // CreateTable InitTable
-func (e *ExternalityChaincode) CreateTable() error {
-	// 币种信息
-	err := e.stub.CreateTable(TableCurrency, []*shim.ColumnDefinition{
+func (c *ExternalityChaincode) CreateTable() error {
+	// currency info
+	err := c.stub.CreateTable(TableCurrency, []*shim.ColumnDefinition{
 		&shim.ColumnDefinition{Name: "ID", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "Count", Type: shim.ColumnDefinition_INT64, Key: false},
 		&shim.ColumnDefinition{Name: "LeftCount", Type: shim.ColumnDefinition_INT64, Key: false},
@@ -34,8 +34,8 @@ func (e *ExternalityChaincode) CreateTable() error {
 		return err
 	}
 
-	// 币发布log
-	err = e.stub.CreateTable(TableCurrencyReleaseLog, []*shim.ColumnDefinition{
+	// currency release log
+	err = c.stub.CreateTable(TableCurrencyReleaseLog, []*shim.ColumnDefinition{
 		&shim.ColumnDefinition{Name: "Currency", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "Count", Type: shim.ColumnDefinition_INT64, Key: false},
 		&shim.ColumnDefinition{Name: "ReleaseTime", Type: shim.ColumnDefinition_INT64, Key: true},
@@ -45,8 +45,8 @@ func (e *ExternalityChaincode) CreateTable() error {
 		return err
 	}
 
-	// 币分发log
-	err = e.stub.CreateTable(TableCurrencyAssignLog, []*shim.ColumnDefinition{
+	// currency assign log
+	err = c.stub.CreateTable(TableCurrencyAssignLog, []*shim.ColumnDefinition{
 		&shim.ColumnDefinition{Name: "Currency", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "Owner", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "Count", Type: shim.ColumnDefinition_INT64, Key: false},
@@ -57,8 +57,8 @@ func (e *ExternalityChaincode) CreateTable() error {
 		return err
 	}
 
-	// 账户资产信息
-	err = e.stub.CreateTable(TableAssets, []*shim.ColumnDefinition{
+	// user asset info
+	err = c.stub.CreateTable(TableAssets, []*shim.ColumnDefinition{
 		&shim.ColumnDefinition{Name: "Owner", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "Currency", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "Count", Type: shim.ColumnDefinition_INT64, Key: false},
@@ -69,8 +69,8 @@ func (e *ExternalityChaincode) CreateTable() error {
 		return err
 	}
 
-	// 账户余额锁定log
-	err = e.stub.CreateTable(TableAssetLockLog, []*shim.ColumnDefinition{
+	// user balance lock log
+	err = c.stub.CreateTable(TableAssetLockLog, []*shim.ColumnDefinition{
 		&shim.ColumnDefinition{Name: "Owner", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "Currency", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "Order", Type: shim.ColumnDefinition_STRING, Key: true},
@@ -83,8 +83,8 @@ func (e *ExternalityChaincode) CreateTable() error {
 		return err
 	}
 
-	// 交易log
-	err = e.stub.CreateTable(TableTxLog, []*shim.ColumnDefinition{
+	// tx log
+	err = c.stub.CreateTable(TableTxLog, []*shim.ColumnDefinition{
 		&shim.ColumnDefinition{Name: "Owner", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "SrcCurrency", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "DesCurrency", Type: shim.ColumnDefinition_STRING, Key: true},
@@ -96,8 +96,8 @@ func (e *ExternalityChaincode) CreateTable() error {
 		return err
 	}
 
-	// 交易log
-	err = e.stub.CreateTable(TableTxLog2, []*shim.ColumnDefinition{
+	// tx log
+	err = c.stub.CreateTable(TableTxLog2, []*shim.ColumnDefinition{
 		&shim.ColumnDefinition{Name: "UUID", Type: shim.ColumnDefinition_STRING, Key: true},
 		&shim.ColumnDefinition{Name: "Detail", Type: shim.ColumnDefinition_BYTES, Key: false},
 	})
@@ -109,9 +109,9 @@ func (e *ExternalityChaincode) CreateTable() error {
 }
 
 // InitTable InitTable
-func (e *ExternalityChaincode) InitTable() error {
-	// 内置人民币CNY和美元USD
-	_, err := e.stub.InsertRow(TableCurrency, shim.Row{Columns: []*shim.Column{
+func (c *ExternalityChaincode) InitTable() error {
+	// CNY
+	_, err := c.stub.InsertRow(TableCurrency, shim.Row{Columns: []*shim.Column{
 		&shim.Column{Value: &shim.Column_String_{String_: CNY}},
 		&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
 		&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
@@ -126,7 +126,8 @@ func (e *ExternalityChaincode) InitTable() error {
 		return fmt.Errorf("Failed initiliazing Currency CNY: [%s]", err)
 	}
 
-	_, err = e.stub.InsertRow(TableCurrency, shim.Row{Columns: []*shim.Column{
+	// USD
+	_, err = c.stub.InsertRow(TableCurrency, shim.Row{Columns: []*shim.Column{
 		&shim.Column{Value: &shim.Column_String_{String_: USD}},
 		&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
 		&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
