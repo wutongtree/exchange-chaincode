@@ -24,6 +24,21 @@ func (e *ExternalityChaincode) Init(stub shim.ChaincodeStubInterface, function s
 	e.stub = stub
 	e.args = args
 
+	if len(args) != 0 {
+		return nil, errors.New("Incorrect number of arguments. Expecting 0")
+	}
+
+	err := e.CreateTable()
+	if err != nil {
+		myLogger.Errorf("Init error [CreateTable]:%s", err)
+		return nil, err
+	}
+
+	err = e.InitTable()
+	if err != nil {
+		myLogger.Errorf("Init error [InitTable]:%s", err)
+		return nil, err
+	}
 	myLogger.Debug("Init Chaincode...done")
 
 	return nil, nil
