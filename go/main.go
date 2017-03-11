@@ -78,9 +78,23 @@ func (c *ExternalityChaincode) Query(stub shim.ChaincodeStubInterface, function 
 
 	c.stub = stub
 	c.args = args
-	if function == "" {
 
+	if function == "queryCurrencyByID" {
+		return c.queryCurrencyByID()
+	} else if function == "queryAllCurrency" {
+		return c.queryAllCurrency()
+	} else if function == "queryTxLogs" {
+		return c.queryTxLogs()
+	} else if function == "queryAssetByOwner" {
+		return c.queryAssetByOwner()
+	} else if function == "queryMyCurrency" {
+		return c.queryMyCurrency()
+	} else if function == "queryMyReleaseLog" {
+		return c.queryMyReleaseLog()
+	} else if function == "queryMyAssignLog" {
+		return c.queryMyAssignLog()
 	}
+
 	myLogger.Debug("Query Chaincode...done")
 
 	return nil, errors.New("Received unknown function query")

@@ -23,21 +23,21 @@ type BatchResult struct {
 }
 
 type Order struct {
-	UUID         string `json:"uuid"`         //UUID
-	Account      string `json:"account"`      //账户
-	SrcCurrency  string `json:"srcCurrency"`  //源币种代码
-	SrcCount     int64  `json:"srcCount"`     //源币种交易数量
-	DesCurrency  string `json:"desCurrency"`  //目标币种代码
-	DesCount     int64  `json:"desCount"`     //目标币种交易数量
-	IsBuyAll     bool   `json:"isBuyAll"`     //是否买入所有，即为true是以目标币全部兑完为主,否则算部分成交,买完为止；为false则是以源币全部兑完为主,否则算部分成交，卖完为止
-	ExpiredTime  int64  `json:"expiredTime"`  //超时时间
-	PendingTime  int64  `json:"PendingTime"`  //挂单时间
-	PendedTime   int64  `json:"PendedTime"`   //挂单完成时间
-	MatchedTime  int64  `json:"matchedTime"`  //撮合完成时间
-	FinishedTime int64  `json:"finishedTime"` //交易完成时间
-	RawUUID      string `json:"rawUUID"`      //母单UUID
-	Metadata     string `json:"metadata"`     //存放其他数据，如挂单锁定失败信息
-	FinalCost    int64  `json:"finalCost"`    //源币的最终消耗数量，主要用于买完（IsBuyAll=true）的最后一笔交易计算结余，此时SrcCount有可能大于FinalCost
+	UUID         string `json:"uuid"`
+	Account      string `json:"account"`
+	SrcCurrency  string `json:"srcCurrency"`
+	SrcCount     int64  `json:"srcCount"`
+	DesCurrency  string `json:"desCurrency"`
+	DesCount     int64  `json:"desCount"`
+	IsBuyAll     bool   `json:"isBuyAll"`
+	ExpiredTime  int64  `json:"expiredTime"`
+	PendingTime  int64  `json:"PendingTime"`
+	PendedTime   int64  `json:"PendedTime"`
+	MatchedTime  int64  `json:"matchedTime"`
+	FinishedTime int64  `json:"finishedTime"`
+	RawUUID      string `json:"rawUUID"`
+	Metadata     string `json:"metadata"`
+	FinalCost    int64  `json:"finalCost"`
 }
 
 // initAccount init account (CNY/USD currency) when user first login
@@ -380,7 +380,7 @@ func (c *ExternalityChaincode) exchange() ([]byte, error) {
 			return nil, errors.New("The exchange is invalid")
 		}
 
-		// check 是否交易过
+		// check exchanged or not
 		buyRow, _, err := c.getTxLogByID(buyOrder.UUID)
 		if err != nil {
 			myLogger.Errorf("exchange error2:%s", err)
@@ -388,7 +388,7 @@ func (c *ExternalityChaincode) exchange() ([]byte, error) {
 			continue
 		}
 		if len(buyRow.Columns) > 0 {
-			//交易过
+			// exchanged
 		}
 		sellRow, _, err := c.getTxLogByID(sellOrder.UUID)
 		if err != nil {
@@ -397,7 +397,7 @@ func (c *ExternalityChaincode) exchange() ([]byte, error) {
 			continue
 		}
 		if len(sellRow.Columns) > 0 {
-			// 交易过
+			// exchanged
 		}
 
 		// execTx

@@ -26,9 +26,6 @@ type Currency struct {
 	CreateTime int64  `json:"createTime"`
 }
 
-// 定义批量操作的错误类型
-// CheckErr 表示校验类错误，这样应该跳过该成员，继续执行批量里的其他成员
-// WorldStateErr 表示修改worldstate类错误，此时应直接结束本次交易，批量操作全部失败
 type ErrType string
 
 const (
@@ -125,7 +122,7 @@ func (c *ExternalityChaincode) lockOrUnlockBalance(owner string, currency, order
 		return fmt.Errorf("Locked currency [%s] of the user is insufficient", currency), CheckErr
 	}
 
-	// 判断是否锁定过或解锁过，因为是批量操作，可能会有重复数据。其他批量操作也要作此判断
+	// check the order is locked/unlocked or not
 	lockRow, err := c.getLockLog(owner, currency, order, islock)
 	if err != nil {
 		return err, CheckErr
@@ -188,9 +185,9 @@ func (c *ExternalityChaincode) getTxLogByID(uuid string) (shim.Row, *Order, erro
 	return row, order, err
 }
 
+// execTx execTx
 func (c *ExternalityChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrType) {
-	// 买完为止的挂单结算结余数量
-	// 挂单UUID等于原始ID时表示该单交易完成
+	// UUID=rawuuID
 	if buyOrder.IsBuyAll && buyOrder.UUID == buyOrder.RawUUID {
 		unlock, err := c.computeBalance(buyOrder.Account, buyOrder.SrcCurrency, buyOrder.DesCurrency, buyOrder.RawUUID, buyOrder.FinalCost)
 		if err != nil {
@@ -207,7 +204,7 @@ func (c *ExternalityChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrTyp
 		}
 	}
 
-	// 买单源币锁定数量减少
+	// buy order srcCurrency -
 	buySrcRow, buySrcAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.SrcCurrency)
 	if err != nil {
 		myLogger.Errorf("execTx error3:%s", err)
@@ -223,7 +220,7 @@ func (c *ExternalityChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrTyp
 		return errors.New("Failed updating row"), WorldStateErr
 	}
 
-	// 买单目标币数量增加
+	// buy order srcCurrency +
 	buyDesRow, buyDesAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.DesCurrency)
 	if err != nil {
 		myLogger.Errorf("execTx error5:%s", err)
@@ -252,8 +249,7 @@ func (c *ExternalityChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrTyp
 		}
 	}
 
-	// 买完为止的挂单结算结余数量
-	// 挂单UUID等于原始ID时表示该单交易完成
+	// UUID=rawuuid
 	if sellOrder.IsBuyAll && sellOrder.UUID == sellOrder.RawUUID {
 		unlock, err := c.computeBalance(sellOrder.Account, sellOrder.SrcCurrency, sellOrder.DesCurrency, sellOrder.RawUUID, sellOrder.FinalCost)
 		if err != nil {
@@ -270,7 +266,7 @@ func (c *ExternalityChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrTyp
 		}
 	}
 
-	// 卖单源币数量减少
+	// sell order srcCurrency -
 	sellSrcRow, sellSrcAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.SrcCurrency)
 	if err != nil {
 		myLogger.Errorf("execTx error10:%s", err)
@@ -286,7 +282,7 @@ func (c *ExternalityChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrTyp
 		return errors.New("Failed updating row"), WorldStateErr
 	}
 
-	// 卖单目标币数量增加
+	// sell order desCurrency +
 	sellDesRow, sellDesAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.DesCurrency)
 	if err != nil {
 		myLogger.Errorf("execTx error12:%s", err)
@@ -428,4 +424,92 @@ func (c *ExternalityChaincode) saveTxLog(buyOrder, sellOrder *Order) error {
 		return err
 	}
 	return nil
+}
+
+// getOwnerAllAsset
+func (c *ExternalityChaincode) getOwnerAllAsset(owner string) ([]shim.Row, []*Asset, error) {
+	rowChannel, err := c.stub.GetRows(TableAssets, []shim.Column{
+		shim.Column{Value: &shim.Column_String_{String_: owner}},
+	})
+	if err != nil {
+		return nil, nil, fmt.Errorf("getOwnerAllAsset operation failed. %s", err)
+	}
+
+	var rows []shim.Row
+	var assets []*Asset
+	for {
+		select {
+		case row, ok := <-rowChannel:
+			if !ok {
+				rowChannel = nil
+			} else {
+				rows = append(rows, row)
+
+				asset := &Asset{
+					Owner:     row.Columns[0].GetString_(),
+					Currency:  row.Columns[1].GetString_(),
+					Count:     row.Columns[2].GetInt64(),
+					LockCount: row.Columns[3].GetInt64(),
+				}
+				assets = append(assets, asset)
+			}
+		}
+		if rowChannel == nil {
+			break
+		}
+	}
+	return rows, assets, nil
+}
+
+// getMyCurrency
+func (c *ExternalityChaincode) getMyCurrency(owner string) ([]*Currency, error) {
+	_, infos, err := c.getAllCurrency()
+	if err != nil {
+		return nil, err
+	}
+	if len(infos) == 0 {
+		return nil, NoDataErr
+	}
+
+	var currencys []*Currency
+	for _, v := range infos {
+		if owner == v.Creator {
+			currencys = append(currencys, v)
+		}
+	}
+
+	return currencys, nil
+}
+
+// getAllCurrency
+func (c *ExternalityChaincode) getAllCurrency() ([]shim.Row, []*Currency, error) {
+	rowChannel, err := c.stub.GetRows(TableCurrency, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getRows operation failed. %s", err)
+	}
+	var rows []shim.Row
+	var infos []*Currency
+	for {
+		select {
+		case row, ok := <-rowChannel:
+			if !ok {
+				rowChannel = nil
+			} else {
+				rows = append(rows, row)
+
+				info := new(Currency)
+				info.ID = row.Columns[0].GetString_()
+				info.Count = row.Columns[1].GetInt64()
+				info.LeftCount = row.Columns[2].GetInt64()
+				info.Creator = row.Columns[3].GetString_()
+				info.CreateTime = row.Columns[4].GetInt64()
+
+				infos = append(infos, info)
+			}
+		}
+		if rowChannel == nil {
+			break
+		}
+	}
+	return rows, infos, nil
 }
