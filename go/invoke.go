@@ -77,14 +77,14 @@ func (c *ExternalityChaincode) initAccount() ([]byte, error) {
 	assetRow, _, err = c.getOwnerOneAsset(user, USD)
 	if err != nil {
 		myLogger.Errorf("initAccount error3:%s", err)
-		return nil, fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", CNY, err)
+		return nil, fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", USD, err)
 	}
 	if len(assetRow.Columns) == 0 {
 		_, err = c.stub.InsertRow(TableAssets,
 			shim.Row{
 				Columns: []*shim.Column{
 					&shim.Column{Value: &shim.Column_String_{String_: user}},
-					&shim.Column{Value: &shim.Column_String_{String_: CNY}},
+					&shim.Column{Value: &shim.Column_String_{String_: USD}},
 					&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
 					&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
 				},
