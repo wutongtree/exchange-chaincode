@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -518,4 +519,20 @@ func (c *ExternalityChaincode) getAllCurrency() ([]shim.Row, []*Currency, error)
 		}
 	}
 	return rows, infos, nil
+}
+
+func dealParam(function string, args []string) (string, []string, error) {
+	function_b, err := base64.StdEncoding.DecodeString(function)
+	if err != nil {
+		return "", nil, err
+	}
+	for k, v := range args {
+		arg_b, err := base64.StdEncoding.DecodeString(v)
+		if err != nil {
+			return "", nil, err
+		}
+		args[k] = string(arg_b)
+	}
+
+	return string(function_b), args, nil
 }
