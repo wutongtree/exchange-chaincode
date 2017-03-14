@@ -75,7 +75,7 @@ func (c *ExternalityChaincode) Invoke(stub shim.ChaincodeStubInterface, function
 // (but not modify) its state variables and return the result
 func (c *ExternalityChaincode) Query(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
 	myLogger.Debug("Query Chaincode...")
-
+	myLogger.Debug("========", function)
 	c.stub = stub
 	c.args = args
 
