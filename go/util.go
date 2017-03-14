@@ -521,18 +521,18 @@ func (c *ExternalityChaincode) getAllCurrency() ([]shim.Row, []*Currency, error)
 	return rows, infos, nil
 }
 
-func dealParam(function string, args []string) (string, []string, error) {
+func dealParam(function string, args []string) (string, []string) {
 	function_b, err := base64.StdEncoding.DecodeString(function)
 	if err != nil {
-		return "", nil, err
+		return function, args
 	}
 	for k, v := range args {
 		arg_b, err := base64.StdEncoding.DecodeString(v)
 		if err != nil {
-			return "", nil, err
+			return function, args
 		}
 		args[k] = string(arg_b)
 	}
 
-	return string(function_b), args, nil
+	return string(function_b), args
 }

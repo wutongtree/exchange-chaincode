@@ -21,7 +21,7 @@ type ExternalityChaincode struct {
 func (c *ExternalityChaincode) Init(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
 	myLogger.Debug("Init Chaincode...")
 
-	function, args, _ = dealParam(function, args)
+	function, args = dealParam(function, args)
 	myLogger.Debugf("Init function:%s ,args:%s", function, args)
 
 	c.stub = stub
@@ -52,7 +52,7 @@ func (c *ExternalityChaincode) Init(stub shim.ChaincodeStubInterface, function s
 func (c *ExternalityChaincode) Invoke(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
 	myLogger.Debug("Invoke Chaincode...")
 
-	function, args, _ = dealParam(function, args)
+	function, args = dealParam(function, args)
 	myLogger.Debugf("Invoke function:%s ,args:%s", function, args)
 
 	c.stub = stub
@@ -82,7 +82,7 @@ func (c *ExternalityChaincode) Invoke(stub shim.ChaincodeStubInterface, function
 func (c *ExternalityChaincode) Query(stub shim.ChaincodeStubInterface, function string, args []string) ([]byte, error) {
 	myLogger.Debug("Query Chaincode...")
 
-	function, args, _ = dealParam(function, args)
+	function, args = dealParam(function, args)
 	myLogger.Debugf("Query function:%s ,args:%s", function, args)
 
 	c.stub = stub
