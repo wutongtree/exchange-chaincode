@@ -24,7 +24,7 @@ limitations under the License.
   <groupId>example</groupId>
   <artifactId>chaincode-example</artifactId>
   <packaging>jar</packaging>
-  <name>java-example</name>
+  <name>java-krcc</name>
   <version>1.0</version>
   <url>http://maven.apache.org</url>
   <build>
@@ -41,7 +41,7 @@ limitations under the License.
       <manifest>
       <addClasspath>true</addClasspath>
       <classpathPrefix>libs/</classpathPrefix>
-      <mainClass>example.Example</mainClass>
+      <mainClass>krcc.KRCC</mainClass>
       </manifest>
       </archive>
     </configuration>
