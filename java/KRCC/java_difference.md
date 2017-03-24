@@ -58,8 +58,5 @@ is returned to the caller; any PutState calls will not have any effect on the le
 我的理解是，就好比我们的数据库事物特性中的隔离性，这里对更改账本的操作进行严格的隔离，而对查询操作不进行隔离。
 当然这会导致查询到的信息并不是最新的，因为很可能查询的同时，在进行更改操作。对于更改操作则必须指定对应的channel。
 
-
-
-
-
-
+**JAVAchaincode变化**
+现阶段java的Chaincode还不完善，很多方法还保留着以前老的，比如ChaincodeBase里面就是以前老的代码。最新的代码还是要看SDK
