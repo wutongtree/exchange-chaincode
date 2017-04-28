@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
+	pb "github.com/hyperledger/fabric/protos/peer"
 )
 
 type FailInfo struct {
@@ -42,11 +43,11 @@ type Order struct {
 
 // initAccount init account (CNY/USD currency) when user first login
 // args: user
-func (c *ExternalityChaincode) initAccount() ([]byte, error) {
+func (c *ExchangeChaincode) initAccount() pb.Response {
 	myLogger.Debug("Init account...")
 
 	if len(c.args) != 1 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 1")
+		return shim.Error("Incorrect number of arguments. Expecting 1")
 	}
 
 	user := c.args[0]
@@ -55,21 +56,17 @@ func (c *ExternalityChaincode) initAccount() ([]byte, error) {
 	assetRow, _, err := c.getOwnerOneAsset(user, CNY)
 	if err != nil {
 		myLogger.Errorf("initAccount error1:%s", err)
-		return nil, fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", CNY, err)
+		return shim.Error(fmt.Sprintf("Failed retrieving asset [%s] of the user: [%s]", CNY, err))
 	}
 	if len(assetRow.Columns) == 0 {
-		_, err = c.stub.InsertRow(TableAssets,
-			shim.Row{
-				Columns: []*shim.Column{
-					&shim.Column{Value: &shim.Column_String_{String_: user}},
-					&shim.Column{Value: &shim.Column_String_{String_: CNY}},
-					&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-					&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-				},
-			})
+		err = c.saveAsset(&Asset{
+			Owner:     user,
+			Currency:  CNY,
+			Count:     0,
+			LockCount: 0,
+		})
 		if err != nil {
-			myLogger.Errorf("initAccount error2:%s", err)
-			return nil, err
+			return shim.Error(err.Error())
 		}
 	}
 
@@ -80,18 +77,14 @@ func (c *ExternalityChaincode) initAccount() ([]byte, error) {
 		return nil, fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", USD, err)
 	}
 	if len(assetRow.Columns) == 0 {
-		_, err = c.stub.InsertRow(TableAssets,
-			shim.Row{
-				Columns: []*shim.Column{
-					&shim.Column{Value: &shim.Column_String_{String_: user}},
-					&shim.Column{Value: &shim.Column_String_{String_: USD}},
-					&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-					&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-				},
-			})
+		err = c.saveAsset(&Asset{
+			Owner:     user,
+			Currency:  USD,
+			Count:     0,
+			LockCount: 0,
+		})
 		if err != nil {
-			myLogger.Errorf("initAccount error4:%s", err)
-			return nil, err
+			return shim.Error(err.Error())
 		}
 	}
 
@@ -102,7 +95,7 @@ func (c *ExternalityChaincode) initAccount() ([]byte, error) {
 
 // create create currency
 // args:currency id, currency count, currency creator
-func (c *ExternalityChaincode) create() ([]byte, error) {
+func (c *ExchangeChaincode) create() ([]byte, error) {
 	myLogger.Debug("Create Currency...")
 
 	if len(c.args) != 3 {
@@ -146,7 +139,7 @@ func (c *ExternalityChaincode) create() ([]byte, error) {
 
 // release release currency
 // args: currency id, release count
-func (c *ExternalityChaincode) release() ([]byte, error) {
+func (c *ExchangeChaincode) release() ([]byte, error) {
 	myLogger.Debug("Release Currency...")
 
 	if len(c.args) != 2 {
@@ -196,7 +189,7 @@ func (c *ExternalityChaincode) release() ([]byte, error) {
 
 // assign  assign currency
 // args: json{currency id, []{reciver, count}}
-func (c *ExternalityChaincode) assign() ([]byte, error) {
+func (c *ExchangeChaincode) assign() ([]byte, error) {
 	myLogger.Debug("Assign Currency...")
 
 	if len(c.args) != 1 {
@@ -299,7 +292,7 @@ func (c *ExternalityChaincode) assign() ([]byte, error) {
 
 // lock lock or unlock user asset when commit a exchange or cancel exchange
 // args: json []{user, currency id, lock count, lock order}, islock, srcMethod
-func (c *ExternalityChaincode) lock() ([]byte, error) {
+func (c *ExchangeChaincode) lock() ([]byte, error) {
 	myLogger.Debug("Lock Asset Balance...")
 
 	if len(c.args) != 3 {
@@ -350,7 +343,7 @@ func (c *ExternalityChaincode) lock() ([]byte, error) {
 
 // exchange exchange asset
 // args: exchange order 1, exchange order 2
-func (c *ExternalityChaincode) exchange() ([]byte, error) {
+func (c *ExchangeChaincode) exchange() ([]byte, error) {
 	myLogger.Debug("Exchange...")
 
 	if len(c.args) != 1 {

@@ -1,7 +1,7 @@
 package main
 
 import (
-	"fmt"
+	"encoding/json"
 	"time"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
@@ -15,8 +15,6 @@ const (
 	TableAssetLockLog       = "AssetLockLog"
 	TableTxLog              = "TxLog"
 	TableTxLog2             = "TxLog2"
-	CNY                     = "CNY"
-	USD                     = "USD"
 )
 
 // CreateTable InitTable
@@ -107,33 +105,33 @@ func (c *ExternalityChaincode) CreateTable() error {
 	}
 	return nil
 }
+func (c *ExchangeChaincode) initCurrency() error {
 
-// InitTable InitTable
-func (c *ExternalityChaincode) InitTable() error {
-	// CNY
-	_, err := c.stub.InsertRow(TableCurrency, shim.Row{Columns: []*shim.Column{
-		&shim.Column{Value: &shim.Column_String_{String_: CNY}},
-		&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-		&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-		&shim.Column{Value: &shim.Column_String_{String_: "system"}},
-		&shim.Column{Value: &shim.Column_Int64{Int64: time.Now().Unix()}},
-	}})
-	if err != nil {
-		myLogger.Errorf("initTable error2:%s", err)
-		return fmt.Errorf("Failed initiliazing Currency CNY: [%s]", err)
+	cur := Currency{
+		ID:         CNY,
+		Count:      0,
+		LeftCount:  0,
+		Creator:    "system",
+		CreateTime: time.Now().Unix(),
 	}
 
-	// USD
-	_, err = c.stub.InsertRow(TableCurrency, shim.Row{Columns: []*shim.Column{
-		&shim.Column{Value: &shim.Column_String_{String_: USD}},
-		&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-		&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-		&shim.Column{Value: &shim.Column_String_{String_: "system"}},
-		&shim.Column{Value: &shim.Column_Int64{Int64: time.Now().Unix()}},
-	}})
+	cny, err := json.Marshal(&cur)
 	if err != nil {
-		myLogger.Errorf("initTable error2:%s", err)
-		return fmt.Errorf("Failed initiliazing Currency USD: [%s]", err)
+		return err
+	}
+	err = c.stub.PutState(CNY, cny)
+	if err != nil {
+		return err
+	}
+
+	cur.ID = USD
+	usd, err := json.Marshal(&cur)
+	if err != nil {
+		return err
+	}
+	err = c.stub.PutState(USD, usd)
+	if err != nil {
+		return err
 	}
 
 	return nil

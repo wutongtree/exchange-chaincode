@@ -26,7 +26,7 @@ type AssignLog struct {
 }
 
 // queryCurrency
-func (c *ExternalityChaincode) queryCurrencyByID() ([]byte, error) {
+func (c *ExchangeChaincode) queryCurrencyByID() ([]byte, error) {
 	myLogger.Debug("queryCurrency...")
 
 	if len(c.args) != 1 {
@@ -48,7 +48,7 @@ func (c *ExternalityChaincode) queryCurrencyByID() ([]byte, error) {
 }
 
 // queryAllCurrency
-func (c *ExternalityChaincode) queryAllCurrency() ([]byte, error) {
+func (c *ExchangeChaincode) queryAllCurrency() ([]byte, error) {
 	myLogger.Debug("queryCurrency...")
 
 	if len(c.args) != 0 {
@@ -67,7 +67,7 @@ func (c *ExternalityChaincode) queryAllCurrency() ([]byte, error) {
 }
 
 // queryTxLogs
-func (c *ExternalityChaincode) queryTxLogs() ([]byte, error) {
+func (c *ExchangeChaincode) queryTxLogs() ([]byte, error) {
 	myLogger.Debug("queryTxLogs...")
 
 	if len(c.args) != 0 {
@@ -104,7 +104,7 @@ func (c *ExternalityChaincode) queryTxLogs() ([]byte, error) {
 }
 
 // queryAssetByOwner
-func (c *ExternalityChaincode) queryAssetByOwner() ([]byte, error) {
+func (c *ExchangeChaincode) queryAssetByOwner() ([]byte, error) {
 	myLogger.Debug("queryAssetByOwner...")
 
 	if len(c.args) != 1 {
@@ -124,7 +124,7 @@ func (c *ExternalityChaincode) queryAssetByOwner() ([]byte, error) {
 }
 
 // queryMyCurrency
-func (c *ExternalityChaincode) queryMyCurrency() ([]byte, error) {
+func (c *ExchangeChaincode) queryMyCurrency() ([]byte, error) {
 	myLogger.Debug("queryCurrency...")
 
 	if len(c.args) != 1 {
@@ -141,7 +141,7 @@ func (c *ExternalityChaincode) queryMyCurrency() ([]byte, error) {
 }
 
 // queryReleaseLog
-func (c *ExternalityChaincode) queryMyReleaseLog() ([]byte, error) {
+func (c *ExchangeChaincode) queryMyReleaseLog() ([]byte, error) {
 	myLogger.Debug("queryMyReleaseLog...")
 
 	if len(c.args) != 1 {
@@ -186,7 +186,7 @@ func (c *ExternalityChaincode) queryMyReleaseLog() ([]byte, error) {
 }
 
 // queryMyAssignLog
-func (c *ExternalityChaincode) queryMyAssignLog() ([]byte, error) {
+func (c *ExchangeChaincode) queryMyAssignLog() ([]byte, error) {
 	myLogger.Debug("queryAssignLog...")
 
 	if len(c.args) != 1 {
