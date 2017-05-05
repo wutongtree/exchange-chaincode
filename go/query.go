@@ -29,7 +29,7 @@ func (c *ExchangeChaincode) queryCurrencyByID() ([]byte, error) {
 
 	id := c.args[0]
 
-	_, currency, err := c.getCurrencyByID(id)
+	currency, err := c.getCurrencyByID(id)
 	if err != nil {
 		myLogger.Errorf("queryCurrencyByID error1:%s", err)
 		return nil, err
@@ -49,7 +49,7 @@ func (c *ExchangeChaincode) queryAllCurrency() ([]byte, error) {
 		return nil, errors.New("Incorrect number of arguments. Expecting 0")
 	}
 
-	_, infos, err := c.getAllCurrency()
+	infos, err := c.getAllCurrency()
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (c *ExchangeChaincode) queryAssetByOwner() ([]byte, error) {
 	}
 
 	owner := c.args[0]
-	_, assets, err := c.getOwnerAllAsset(owner)
+	assets, err := c.getOwnerAllAsset(owner)
 	if err != nil {
 		myLogger.Errorf("queryAssetByOwner error1:%s", err)
 		return nil, err

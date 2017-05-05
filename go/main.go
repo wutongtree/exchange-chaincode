@@ -38,7 +38,7 @@ func (c *ExchangeChaincode) Init(stub shim.ChaincodeStubInterface) pb.Response {
 
 	myLogger.Debug("Init Chaincode...done")
 
-	return shim.Success(shim)
+	return shim.Success(nil)
 }
 
 // Invoke invoke

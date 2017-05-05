@@ -89,6 +89,15 @@ func (c *ExchangeChaincode) putAsset(asset *Asset) error {
 		return err
 	}
 
+	indexName2 := "owner~uuid"
+	indexKey2, err := c.stub.CreateCompositeKey(indexName2, []string{asset.Owner, asset.UUID})
+	if err != nil {
+		return err
+	}
+	err = c.stub.PutState(indexKey2, []byte{0x00})
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -132,6 +141,39 @@ func (c *ExchangeChaincode) getOwnerOneAsset(owner, currency string) (*Asset, er
 	}
 
 	return nil, nil
+}
+
+// getOwnerAllAsset
+func (c *ExchangeChaincode) getOwnerAllAsset(owner string) ([]*Asset, error) {
+
+	var assets []*Asset
+
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("owner~uuid", []string{owner})
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	for resultsIterator.HasNext() {
+		responseRange, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		uuid := compositeKeyParts[1]
+		asset, err := c.getAsset(uuid)
+		if err != nil {
+			return nil, err
+		}
+		assets = append(assets, asset)
+	}
+
+	return assets, nil
 }
 
 // putCurrency putCurrency
@@ -188,12 +230,12 @@ func (c *ExchangeChaincode) getCurrencyByID(id string) (*Currency, error) {
 	defer resultsIterator.Close()
 
 	for resultsIterator.HasNext() {
-		reponseRange, err := resultsIterator.Next()
+		responseRange, err := resultsIterator.Next()
 		if err != nil {
 			return nil, err
 		}
 
-		_, compositeKeyParts, err := c.stub.SplitCompositeKey(reponseRange.Key)
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
 		if err != nil {
 			return nil, err
 		}
@@ -203,6 +245,37 @@ func (c *ExchangeChaincode) getCurrencyByID(id string) (*Currency, error) {
 	}
 
 	return nil, nil
+}
+
+// getAllCurrency
+func (c *ExchangeChaincode) getAllCurrency() ([]*Currency, error) {
+	rowChannel, err := c.stub.GetRows(TableCurrency, nil)
+	if err != nil {
+		return nil, nil, fmt.Errorf("getRows operation failed. %s", err)
+	}
+	var rows []shim.Row
+	var infos []*Currency
+
+	resultsIterator, err := c.stub.GetStateByRange("", "")
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	for resultsIterator.HasNext() {
+		responseRange, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		err = json.Unmarshal(responseRange.Value, curr)
+		if err != nil {
+			return nil, err
+		}
+		currs = append(currs, curr)
+	}
+
+	return currs, nil
 }
 
 type ReleaseLog struct {
@@ -370,12 +443,12 @@ func (c *ExchangeChaincode) getLockLogByParm(owner, currency, order string, islo
 	defer resultsIterator.Close()
 
 	for resultsIterator.HasNext() {
-		reponseRange, err := resultsIterator.Next()
+		responseRange, err := resultsIterator.Next()
 		if err != nil {
 			return nil, err
 		}
 
-		_, compositeKeyParts, err := c.stub.SplitCompositeKey(reponseRange.Key)
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
 		if err != nil {
 			return nil, err
 		}
@@ -626,41 +699,6 @@ func (c *ExchangeChaincode) getTXs(owner, srcCurrency, desCurrency, rawOrder str
 	return orders, nil
 }
 
-// getOwnerAllAsset
-func (c *ExchangeChaincode) getOwnerAllAsset(owner string) ([]*Asset, error) {
-	rowChannel, err := c.stub.GetRows(TableAssets, []shim.Column{
-		shim.Column{Value: &shim.Column_String_{String_: owner}},
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("getOwnerAllAsset operation failed. %s", err)
-	}
-
-	var rows []shim.Row
-	var assets []*Asset
-	for {
-		select {
-		case row, ok := <-rowChannel:
-			if !ok {
-				rowChannel = nil
-			} else {
-				rows = append(rows, row)
-
-				asset := &Asset{
-					Owner:     row.Columns[0].GetString_(),
-					Currency:  row.Columns[1].GetString_(),
-					Count:     row.Columns[2].GetInt64(),
-					LockCount: row.Columns[3].GetInt64(),
-				}
-				assets = append(assets, asset)
-			}
-		}
-		if rowChannel == nil {
-			break
-		}
-	}
-	return rows, assets, nil
-}
-
 // getMyCurrency
 func (c *ExchangeChaincode) getMyCurrency(owner string) ([]*Currency, error) {
 	_, infos, err := c.getAllCurrency()
@@ -679,39 +717,6 @@ func (c *ExchangeChaincode) getMyCurrency(owner string) ([]*Currency, error) {
 	}
 
 	return currencys, nil
-}
-
-// getAllCurrency
-func (c *ExchangeChaincode) getAllCurrency() ([]shim.Row, []*Currency, error) {
-	rowChannel, err := c.stub.GetRows(TableCurrency, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("getRows operation failed. %s", err)
-	}
-	var rows []shim.Row
-	var infos []*Currency
-	for {
-		select {
-		case row, ok := <-rowChannel:
-			if !ok {
-				rowChannel = nil
-			} else {
-				rows = append(rows, row)
-
-				info := new(Currency)
-				info.ID = row.Columns[0].GetString_()
-				info.Count = row.Columns[1].GetInt64()
-				info.LeftCount = row.Columns[2].GetInt64()
-				info.Creator = row.Columns[3].GetString_()
-				info.CreateTime = row.Columns[4].GetInt64()
-
-				infos = append(infos, info)
-			}
-		}
-		if rowChannel == nil {
-			break
-		}
-	}
-	return rows, infos, nil
 }
 
 func dealParam(function string, args []string) (string, []string) {

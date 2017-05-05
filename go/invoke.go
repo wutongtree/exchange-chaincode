@@ -232,7 +232,12 @@ func (c *ExchangeChaincode) assign() pb.Response {
 			continue
 		}
 
-		err = c.saveAssignLog(assign.Currency, v.Owner, v.Count)
+		err = c.putAssignLog(&AssignLog{
+			Currency:   assign.Currency,
+			Owner:      v.Owner,
+			Count:      v.Count,
+			AssignTime: time.Now().Unix(),
+		})
 		if err != nil {
 			myLogger.Errorf("assignCurrency error3:%s", err)
 			return shim.Error(err.Error())
@@ -249,28 +254,6 @@ func (c *ExchangeChaincode) assign() pb.Response {
 		if err != nil {
 			return shim.Error(err.Error())
 		}
-		// if len(assetRow.Columns) == 0 {
-		// 	_, err = c.stub.InsertRow(TableAssets,
-		// 		shim.Row{
-		// 			Columns: []*shim.Column{
-		// 				&shim.Column{Value: &shim.Column_String_{String_: v.Owner}},
-		// 				&shim.Column{Value: &shim.Column_String_{String_: assign.Currency}},
-		// 				&shim.Column{Value: &shim.Column_Int64{Int64: v.Count}},
-		// 				&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-		// 			},
-		// 		})
-		// 	if err != nil {
-		// 		myLogger.Errorf("assignCurrency error5:%s", err)
-		// 		return nil, err
-		// 	}
-		// } else {
-		// 	assetRow.Columns[2].Value = &shim.Column_Int64{Int64: asset.Count + v.Count}
-		// 	_, err = c.stub.ReplaceRow(TableAssets, assetRow)
-		// 	if err != nil {
-		// 		myLogger.Errorf("assignCurrency error6:%s", err)
-		// 		return nil, err
-		// 	}
-		// }
 
 		curr.LeftCount -= v.Count
 	}
