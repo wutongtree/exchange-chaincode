@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"time"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
@@ -83,8 +84,7 @@ func (c *ExchangeChaincode) putAsset(asset *Asset) error {
 		return err
 	}
 
-	value := []byte{0x00}
-	err = c.stub.PutState(indexKey, value)
+	err = c.stub.PutState(indexKey, []byte{0x00})
 	if err != nil {
 		return err
 	}
@@ -155,8 +155,7 @@ func (c *ExchangeChaincode) putCurrency(currency *Currency) error {
 		return err
 	}
 
-	value := []byte{0x00}
-	err = c.stub.PutState(indexKey, value)
+	err = c.stub.PutState(indexKey, []byte{0x00})
 	if err != nil {
 		return err
 	}
@@ -271,39 +270,36 @@ func (c *ExchangeChaincode) lockOrUnlockBalance(owner string, currency, order st
 	}
 
 	// check the order is locked/unlocked or not
-	lockRow, err := c.getLockLog(owner, currency, order, islock)
+	lockLog, err := c.getLockLogByParm(owner, currency, order, islock)
 	if err != nil {
 		return err, CheckErr
 	}
 
-	if len(lockRow.Columns) > 0 {
+	if lockLog != nil && lockLog.UUID != "" {
 		return ExecedErr, CheckErr
 	}
 
 	if islock {
-		row.Columns[2].Value = &shim.Column_Int64{Int64: asset.Count - count}
-		row.Columns[3].Value = &shim.Column_Int64{Int64: asset.LockCount + count}
+		asset.Count = asset.Count - count
+		asset.LockCount = asset.LockCount + count
 	} else {
-		row.Columns[2].Value = &shim.Column_Int64{Int64: asset.Count + count}
-		row.Columns[3].Value = &shim.Column_Int64{Int64: asset.LockCount - count}
+		asset.Count = asset.Count + count
+		asset.LockCount = asset.LockCount - count
 	}
 
-	_, err = c.stub.ReplaceRow(TableAssets, row)
+	err = c.putAsset(asset)
 	if err != nil {
 		return err, WorldStateErr
 	}
 
-	_, err = c.stub.InsertRow(TableAssetLockLog,
-		shim.Row{
-			Columns: []*shim.Column{
-				&shim.Column{Value: &shim.Column_String_{String_: owner}},
-				&shim.Column{Value: &shim.Column_String_{String_: currency}},
-				&shim.Column{Value: &shim.Column_String_{String_: order}},
-				&shim.Column{Value: &shim.Column_Bool{Bool: islock}},
-				&shim.Column{Value: &shim.Column_Int64{Int64: count}},
-				&shim.Column{Value: &shim.Column_Int64{Int64: time.Now().Unix()}},
-			},
-		})
+	err = c.putLockLog(&LockLog{
+		Owner:     owner,
+		Currency:  currency,
+		Order:     order,
+		IsLock:    islock,
+		LockCount: count,
+		LockTime:  time.Now().Unix(),
+	})
 	if err != nil {
 		return err, WorldStateErr
 	}
@@ -311,27 +307,83 @@ func (c *ExchangeChaincode) lockOrUnlockBalance(owner string, currency, order st
 	return nil, ErrType("")
 }
 
-// getLockLog getLockLog
-func (c *ExchangeChaincode) getLockLog(owner string, currency, order string, islock bool) (shim.Row, error) {
-	return c.stub.GetRow(TableAssetLockLog, []shim.Column{
-		shim.Column{Value: &shim.Column_String_{String_: owner}},
-		shim.Column{Value: &shim.Column_String_{String_: currency}},
-		shim.Column{Value: &shim.Column_String_{String_: order}},
-		shim.Column{Value: &shim.Column_Bool{Bool: islock}},
-	})
+type LockLog struct {
+	UUID      string `json:"uuid"`
+	Owner     string `json:"owner"`
+	Currency  string `json:"currency"`
+	Order     string `json:"order"`
+	IsLock    bool   `json:"isLock"`
+	LockCount int64  `json:"lockCount"`
+	LockTime  int64  `json:"lockTime"`
 }
 
-// getTxLogByID
-func (c *ExchangeChaincode) getTxLogByID(uuid string) (shim.Row, *Order, error) {
-	var order *Order
-	row, err := c.stub.GetRow(TableTxLog2, []shim.Column{
-		shim.Column{Value: &shim.Column_String_{String_: uuid}},
-	})
-	if len(row.Columns) > 0 {
-		err = json.Unmarshal(row.Columns[1].GetBytes(), order)
+func (c *ExchangeChaincode) putLockLog(log *LockLog) error {
+	if log.UUID == "" {
+		log.UUID = GenerateUUID()
+	}
+	r, err := json.Marshal(log)
+	if err != nil {
+		return err
 	}
 
-	return row, order, err
+	err = c.stub.PutState(log.UUID, r)
+	if err != nil {
+		return err
+	}
+
+	indexName := "owner~curr~order~islock~uuid"
+	indexKey, err := c.stub.CreateCompositeKey(indexName, []string{log.Owner, log.Currency, log.Order, strconv.FormatBool(log.IsLock), log.UUID})
+	if err != nil {
+		return err
+	}
+
+	err = c.stub.PutState(indexKey, []byte{0x00})
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+// getLockLog getLockLog
+func (c *ExchangeChaincode) getLockLog(key string) (*LockLog, error) {
+	logByte, err := c.stub.GetState(key)
+	if err != nil {
+		return nil, err
+	}
+
+	var log *LockLog
+	err = json.Unmarshal(logByte, curr)
+	if err != nil {
+		return nil, err
+	}
+	return log, nil
+}
+
+// getLockLog getLockLog
+func (c *ExchangeChaincode) getLockLogByParm(owner, currency, order string, islock bool) (*LockLog, error) {
+	var log *LockLog
+
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("owner~curr~order~islock~uuid", []string{owner, currency, order, strconv.FormatBool(islock)})
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	for resultsIterator.HasNext() {
+		reponseRange, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(reponseRange.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		uuid := compositeKeyParts[4]
+		return c.getLockLog(uuid)
+	}
+	return nil, nil
 }
 
 // execTx execTx
@@ -462,59 +514,21 @@ func (c *ExchangeChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrType) 
 	return nil, ErrType("")
 }
 
-// getTXs
-func (c *ExchangeChaincode) getTXs(owner string, srcCurrency, desCurrency, rawOrder string) ([]shim.Row, []*Order, error) {
-	rowChannel, err := c.stub.GetRows(TableTxLog, []shim.Column{
-		shim.Column{Value: &shim.Column_String_{String_: owner}},
-		shim.Column{Value: &shim.Column_String_{String_: srcCurrency}},
-		shim.Column{Value: &shim.Column_String_{String_: desCurrency}},
-		shim.Column{Value: &shim.Column_String_{String_: rawOrder}},
-	})
-	if err != nil {
-		return nil, nil, fmt.Errorf("getTXs operation failed. %s", err)
-	}
-
-	var rows []shim.Row
-	var orders []*Order
-	for {
-		select {
-		case row, ok := <-rowChannel:
-			if !ok {
-				rowChannel = nil
-			} else {
-				rows = append(rows, row)
-
-				order := new(Order)
-				err := json.Unmarshal(row.Columns[4].GetBytes(), order)
-				if err != nil {
-					return nil, nil, fmt.Errorf("Error unmarshaling JSON: %s", err)
-				}
-
-				orders = append(orders, order)
-			}
-		}
-		if rowChannel == nil {
-			break
-		}
-	}
-	return rows, orders, nil
-}
-
 // computeBalance
 func (c *ExchangeChaincode) computeBalance(owner string, srcCurrency, desCurrency, rawUUID string, currentCost int64) (int64, error) {
-	_, txs, err := c.getTXs(owner, srcCurrency, desCurrency, rawUUID)
+	txs, err := c.getTXs(owner, srcCurrency, desCurrency, rawUUID)
 	if err != nil {
 		return 0, err
 	}
-	row, err := c.getLockLog(owner, srcCurrency, rawUUID, true)
+	lockLog, err := c.getLockLogByParm(owner, srcCurrency, rawUUID, true)
 	if err != nil {
 		return 0, err
 	}
-	if len(row.Columns) == 0 {
+	if lockLog == nil || lockLog.UUID == "" {
 		return 0, errors.New("can't find lock log")
 	}
 
-	lock := row.Columns[4].GetInt64()
+	lock := lockLog.LockCount
 	sumCost := int64(0)
 	for _, tx := range txs {
 		sumCost += tx.FinalCost
@@ -523,61 +537,97 @@ func (c *ExchangeChaincode) computeBalance(owner string, srcCurrency, desCurrenc
 	return lock - sumCost - currentCost, nil
 }
 
-// saveTxLog
-func (c *ExchangeChaincode) saveTxLog(buyOrder, sellOrder *Order) error {
-	buyJson, _ := json.Marshal(buyOrder)
-	sellJson, _ := json.Marshal(sellOrder)
-
-	_, err := c.stub.InsertRow(TableTxLog, shim.Row{
-		Columns: []*shim.Column{
-			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.Account}},
-			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.SrcCurrency}},
-			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.DesCurrency}},
-			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.RawUUID}},
-			&shim.Column{Value: &shim.Column_Bytes{Bytes: buyJson}},
-		},
-	})
+// putTxLog
+func (c *ExchangeChaincode) putTxLog(buyOrder, sellOrder *Order) error {
+	buyJson, err := json.Marshal(buyOrder)
+	if err != nil {
+		return err
+	}
+	sellJson, err := json.Marshal(sellOrder)
 	if err != nil {
 		return err
 	}
 
-	_, err = c.stub.InsertRow(TableTxLog2, shim.Row{
-		Columns: []*shim.Column{
-			&shim.Column{Value: &shim.Column_String_{String_: buyOrder.UUID}},
-			&shim.Column{Value: &shim.Column_Bytes{Bytes: buyJson}},
-		},
-	})
+	err = c.stub.PutState(buyOrder.UUID, buyJson)
 	if err != nil {
 		return err
 	}
 
-	_, err = c.stub.InsertRow(TableTxLog, shim.Row{
-		Columns: []*shim.Column{
-			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.Account}},
-			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.SrcCurrency}},
-			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.DesCurrency}},
-			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.RawUUID}},
-			&shim.Column{Value: &shim.Column_Bytes{Bytes: sellJson}},
-		},
-	})
+	err = c.stub.PutState(sellOrder.UUID, sellJson)
 	if err != nil {
 		return err
 	}
 
-	_, err = c.stub.InsertRow(TableTxLog2, shim.Row{
-		Columns: []*shim.Column{
-			&shim.Column{Value: &shim.Column_String_{String_: sellOrder.UUID}},
-			&shim.Column{Value: &shim.Column_Bytes{Bytes: sellJson}},
-		},
-	})
+	indexName := "owner~src~des~raw~uuid"
+	buyKey, err := c.stub.CreateCompositeKey(indexName, []string{buyOrder.Account, buyOrder.SrcCurrency, buyOrder.DesCurrency, buyOrder.RawUUID, buyOrder.UUID})
+	if err != nil {
+		return err
+	}
+	err = c.stub.PutState(buyKey, []byte{0x00})
+	if err != nil {
+		return err
+	}
+
+	sellKey, err := c.stub.CreateCompositeKey(indexName, []string(sellOrder.Account, sellOrder.SrcCurrency, sellOrder.DesCurrency, sellOrder.RawUUID, sellOrder.UUID))
+	if err != nil {
+		return err
+	}
+	err = c.stub.PutState(sellKey, []byte{0x00})
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
+// getTxLog
+func (c *ExchangeChaincode) getTxLog(key string) (*Order, error) {
+	orderByte, err := c.stub.GetState(key)
+	if err != nil {
+		return nil, err
+	}
+
+	var order *Order
+	err = json.Unmarshal(orderByte, order)
+	if err != nil {
+		return nil, err
+	}
+	return order, nil
+}
+
+// getTXs
+func (c *ExchangeChaincode) getTXs(owner, srcCurrency, desCurrency, rawOrder string) ([]*Order, error) {
+	var orders []*Order
+
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("owner~src~des~raw~uuid", []string(owner, srcCurrency, desCurrency, rawOrder))
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	for resultsIterator.HasNext() {
+		responseRange, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		uuid := compositeKeyParts[4]
+		order, err := c.getTxLog(uuid)
+		if err != nil {
+			return nil, err
+		}
+		orders = append(orders, order)
+	}
+
+	return orders, nil
+}
+
 // getOwnerAllAsset
-func (c *ExchangeChaincode) getOwnerAllAsset(owner string) ([]shim.Row, []*Asset, error) {
+func (c *ExchangeChaincode) getOwnerAllAsset(owner string) ([]*Asset, error) {
 	rowChannel, err := c.stub.GetRows(TableAssets, []shim.Column{
 		shim.Column{Value: &shim.Column_String_{String_: owner}},
 	})

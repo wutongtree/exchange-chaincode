@@ -376,23 +376,23 @@ func (c *ExchangeChaincode) exchange() pb.Response {
 		}
 
 		// check exchanged or not
-		buyRow, _, err := c.getTxLogByID(buyOrder.UUID)
+		buy, err := c.getTxLog(buyOrder.UUID)
 		if err != nil {
 			myLogger.Errorf("exchange error2:%s", err)
 			failInfos = append(failInfos, FailInfo{Id: matchOrder, Info: err.Error()})
 			continue
 		}
-		if len(buyRow.Columns) > 0 {
+		if buy != nil && buy.UUID != "" {
 			// exchanged
 		}
 
-		sellRow, _, err := c.getTxLogByID(sellOrder.UUID)
+		sell, err := c.getTxLog(sellOrder.UUID)
 		if err != nil {
 			myLogger.Errorf("exchange error3:%s", err)
 			failInfos = append(failInfos, FailInfo{Id: matchOrder, Info: err.Error()})
 			continue
 		}
-		if len(sellRow.Columns) > 0 {
+		if sell != nil && sell.UUID != "" {
 			// exchanged
 		}
 
@@ -407,7 +407,7 @@ func (c *ExchangeChaincode) exchange() pb.Response {
 		}
 
 		// txlog
-		err = c.saveTxLog(&buyOrder, &sellOrder)
+		err = c.putTxLog(&buyOrder, &sellOrder)
 		if err != nil {
 			myLogger.Errorf("exchange error5:%s", err)
 			return shim.Error(err.Error())
