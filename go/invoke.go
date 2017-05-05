@@ -2,7 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -53,13 +52,13 @@ func (c *ExchangeChaincode) initAccount() pb.Response {
 	user := c.args[0]
 
 	// find CNY of the user
-	assetRow, _, err := c.getOwnerOneAsset(user, CNY)
+	asset, err := c.getOwnerOneAsset(user, CNY)
 	if err != nil {
 		myLogger.Errorf("initAccount error1:%s", err)
 		return shim.Error(fmt.Sprintf("Failed retrieving asset [%s] of the user: [%s]", CNY, err))
 	}
-	if len(assetRow.Columns) == 0 {
-		err = c.saveAsset(&Asset{
+	if asset == nil || asset.UUID == "" {
+		err = c.putAsset(&Asset{
 			Owner:     user,
 			Currency:  CNY,
 			Count:     0,
@@ -71,13 +70,13 @@ func (c *ExchangeChaincode) initAccount() pb.Response {
 	}
 
 	// fins USD of the user
-	assetRow, _, err = c.getOwnerOneAsset(user, USD)
+	asset, err = c.getOwnerOneAsset(user, USD)
 	if err != nil {
 		myLogger.Errorf("initAccount error3:%s", err)
-		return nil, fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", USD, err)
+		return shim.Error(fmt.Sprintf("Failed retrieving asset [%s] of the user: [%s]", USD, err))
 	}
-	if len(assetRow.Columns) == 0 {
-		err = c.saveAsset(&Asset{
+	if asset == nil || asset.UUID == "" {
+		err = c.putAsset(&Asset{
 			Owner:     user,
 			Currency:  USD,
 			Count:     0,
@@ -90,16 +89,16 @@ func (c *ExchangeChaincode) initAccount() pb.Response {
 
 	myLogger.Debug("Init account...done")
 
-	return nil, nil
+	return shim.Success(nil)
 }
 
 // create create currency
 // args:currency id, currency count, currency creator
-func (c *ExchangeChaincode) create() ([]byte, error) {
+func (c *ExchangeChaincode) create() pb.Response {
 	myLogger.Debug("Create Currency...")
 
 	if len(c.args) != 3 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 3")
+		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
 
 	id := c.args[0]
@@ -107,93 +106,89 @@ func (c *ExchangeChaincode) create() ([]byte, error) {
 	creator := c.args[2]
 	now := time.Now().Unix()
 
-	ok, err := c.stub.InsertRow(TableCurrency,
-		shim.Row{
-			Columns: []*shim.Column{
-				&shim.Column{Value: &shim.Column_String_{String_: id}},
-				&shim.Column{Value: &shim.Column_Int64{Int64: count}},
-				&shim.Column{Value: &shim.Column_Int64{Int64: count}},
-				&shim.Column{Value: &shim.Column_String_{String_: creator}},
-				&shim.Column{Value: &shim.Column_Int64{Int64: now}},
-			},
-		})
+	err := c.putCurrency(&Currency{
+		ID:         id,
+		Count:      count,
+		LeftCount:  count,
+		Creator:    creator,
+		CreateTime: now,
+	})
 	if err != nil {
 		myLogger.Errorf("create error2:%s", err)
-		return nil, err
-	}
-	if !ok {
-		return nil, errors.New("Currency was already existed")
+		return shim.Error(err.Error())
 	}
 
 	if count > 0 {
-		err = c.saveReleaseLog(id, count, now)
+		err = c.putReleaseLog(&ReleaseLog{
+			Currency:    id,
+			Count:       count,
+			ReleaseTime: now,
+		})
 		if err != nil {
-			return nil, err
+			return shim.Error(err.Error())
 		}
 	}
 
 	myLogger.Debug("Create Currency...done")
 
-	return nil, nil
+	return shim.Success(nil)
 }
 
 // release release currency
 // args: currency id, release count
-func (c *ExchangeChaincode) release() ([]byte, error) {
+func (c *ExchangeChaincode) release() pb.Response {
 	myLogger.Debug("Release Currency...")
 
 	if len(c.args) != 2 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 2")
+		return shim.Error("Incorrect number of arguments. Expecting 2")
 	}
 
 	id := c.args[0]
 	count, err := strconv.ParseInt(c.args[1], 10, 64)
 	if err != nil || count <= 0 {
-		return nil, errors.New("The currency release count must be > 0")
+		return shim.Error("The currency release count must be > 0")
 	}
 
 	if id == CNY || id == USD {
-		return nil, errors.New("Currency can't be CNY or USD")
+		return shim.Error("Currency can't be CNY or USD")
 	}
 
-	currRow, curr, err := c.getCurrencyByID(id)
+	curr, err := c.getCurrencyByID(id)
 	if err != nil {
 		myLogger.Errorf("releaseCurrency error1:%s", err)
-		return nil, fmt.Errorf("Failed retrieving currency [%s]: [%s]", id, err)
-	}
-	if len(currRow.Columns) == 0 {
-		return nil, fmt.Errorf("Can't find currency [%s]", id)
+		return shim.Error(fmt.Sprintf("Failed retrieving currency [%s]: [%s]", id, err))
 	}
 
 	// update currency data
-	currRow.Columns[1].Value = &shim.Column_Int64{Int64: curr.Count + count}
-	currRow.Columns[2].Value = &shim.Column_Int64{Int64: curr.LeftCount + count}
-	ok, err := c.stub.ReplaceRow(TableCurrency, currRow)
+	curr.Count = curr.Count + count
+	curr.LeftCount = curr.LeftCount + count
+	err = c.putCurrency(curr)
 	if err != nil {
 		myLogger.Errorf("releaseCurrency error2:%s", err)
-		return nil, fmt.Errorf("Failed replacing row [%s]", err)
-	}
-	if !ok {
-		return nil, errors.New("Failed replacing row")
+		return shim.Error(fmt.Sprintf("Failed replacing row [%s]", err))
 	}
 
-	err = c.saveReleaseLog(id, count, time.Now().Unix())
+	err = c.putReleaseLog(&ReleaseLog{
+		Currency:    id,
+		Count:       count,
+		ReleaseTime: time.Now().Unix(),
+	})
 	if err != nil {
-		return nil, err
+		return shim.Error(err.Error())
 	}
 
 	myLogger.Debug("Release Currency...done")
 
-	return nil, nil
+	return shim.Success(nil)
 }
 
 // assign  assign currency
 // args: json{currency id, []{reciver, count}}
-func (c *ExchangeChaincode) assign() ([]byte, error) {
+func (c *ExchangeChaincode) assign() pb.Response {
 	myLogger.Debug("Assign Currency...")
 
 	if len(c.args) != 1 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 1")
+		return shim.Error("Incorrect number of arguments. Expecting 1")
 	}
 
 	assign := struct {
@@ -207,20 +202,17 @@ func (c *ExchangeChaincode) assign() ([]byte, error) {
 	err := json.Unmarshal([]byte(c.args[0]), &assign)
 	if err != nil {
 		myLogger.Errorf("assignCurrency error1:%s", err)
-		return nil, fmt.Errorf("Failed unmarshalling assign data: [%s]", err)
+		return shim.Error(fmt.Sprintf("Failed unmarshalling assign data: [%s]", err))
 	}
 
 	if len(assign.Assigns) == 0 {
-		return nil, nil
+		return shim.Success(nil)
 	}
 
-	currRow, curr, err := c.getCurrencyByID(assign.Currency)
+	curr, err := c.getCurrencyByID(assign.Currency)
 	if err != nil {
 		myLogger.Errorf("assignCurrency error2:%s", err)
-		return nil, fmt.Errorf("Failed retrieving currency [%s]: [%s]", assign.Currency, err)
-	}
-	if len(currRow.Columns) == 0 {
-		return nil, fmt.Errorf("Can't find currency [%s]", assign.Currency)
+		return shim.Error(fmt.Sprintf("Failed retrieving currency [%s]: [%s]", assign.Currency, err))
 	}
 
 	assignCount := int64(0)
@@ -231,7 +223,7 @@ func (c *ExchangeChaincode) assign() ([]byte, error) {
 
 		assignCount += v.Count
 		if assignCount > curr.LeftCount {
-			return nil, fmt.Errorf("The left count [%d] of currency [%s] is insufficient", curr.LeftCount, assign.Currency)
+			return shim.Error(fmt.Sprintf("The left count [%d] of currency [%s] is insufficient", curr.LeftCount, assign.Currency))
 		}
 	}
 
@@ -243,60 +235,70 @@ func (c *ExchangeChaincode) assign() ([]byte, error) {
 		err = c.saveAssignLog(assign.Currency, v.Owner, v.Count)
 		if err != nil {
 			myLogger.Errorf("assignCurrency error3:%s", err)
-			return nil, err
+			return shim.Error(err.Error())
 		}
 
-		assetRow, asset, err := c.getOwnerOneAsset(v.Owner, assign.Currency)
+		asset, err := c.getOwnerOneAsset(v.Owner, assign.Currency)
 		if err != nil {
 			myLogger.Errorf("assignCurrency error4:%s", err)
-			return nil, fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", assign.Currency, err)
+			return shim.Error(fmt.Sprintf("Failed retrieving asset [%s] of the user: [%s]", assign.Currency, err))
 		}
-		if len(assetRow.Columns) == 0 {
-			_, err = c.stub.InsertRow(TableAssets,
-				shim.Row{
-					Columns: []*shim.Column{
-						&shim.Column{Value: &shim.Column_String_{String_: v.Owner}},
-						&shim.Column{Value: &shim.Column_String_{String_: assign.Currency}},
-						&shim.Column{Value: &shim.Column_Int64{Int64: v.Count}},
-						&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-					},
-				})
-			if err != nil {
-				myLogger.Errorf("assignCurrency error5:%s", err)
-				return nil, err
-			}
-		} else {
-			assetRow.Columns[2].Value = &shim.Column_Int64{Int64: asset.Count + v.Count}
-			_, err = c.stub.ReplaceRow(TableAssets, assetRow)
-			if err != nil {
-				myLogger.Errorf("assignCurrency error6:%s", err)
-				return nil, err
-			}
+
+		asset.Count = asset.Count + v.Count
+		err = c.putAsset(asset)
+		if err != nil {
+			return shim.Error(err.Error())
 		}
+		// if len(assetRow.Columns) == 0 {
+		// 	_, err = c.stub.InsertRow(TableAssets,
+		// 		shim.Row{
+		// 			Columns: []*shim.Column{
+		// 				&shim.Column{Value: &shim.Column_String_{String_: v.Owner}},
+		// 				&shim.Column{Value: &shim.Column_String_{String_: assign.Currency}},
+		// 				&shim.Column{Value: &shim.Column_Int64{Int64: v.Count}},
+		// 				&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
+		// 			},
+		// 		})
+		// 	if err != nil {
+		// 		myLogger.Errorf("assignCurrency error5:%s", err)
+		// 		return nil, err
+		// 	}
+		// } else {
+		// 	assetRow.Columns[2].Value = &shim.Column_Int64{Int64: asset.Count + v.Count}
+		// 	_, err = c.stub.ReplaceRow(TableAssets, assetRow)
+		// 	if err != nil {
+		// 		myLogger.Errorf("assignCurrency error6:%s", err)
+		// 		return nil, err
+		// 	}
+		// }
 
 		curr.LeftCount -= v.Count
 	}
 
-	if curr.LeftCount != currRow.Columns[2].GetInt64() {
-		currRow.Columns[2].Value = &shim.Column_Int64{Int64: curr.LeftCount}
-		_, err = c.stub.ReplaceRow(TableCurrency, currRow)
-		if err != nil {
-			myLogger.Errorf("assignCurrency error7:%s", err)
-			return nil, err
-		}
+	err = c.putCurrency(curr)
+	if err != nil {
+		return shim.Error(err.Error())
 	}
+	// if curr.LeftCount != currRow.Columns[2].GetInt64() {
+	// 	currRow.Columns[2].Value = &shim.Column_Int64{Int64: curr.LeftCount}
+	// 	_, err = c.stub.ReplaceRow(TableCurrency, currRow)
+	// 	if err != nil {
+	// 		myLogger.Errorf("assignCurrency error7:%s", err)
+	// 		return nil, err
+	// 	}
+	// }
 
 	myLogger.Debug("Assign Currency...done")
-	return nil, nil
+	return shim.Success(nil)
 }
 
 // lock lock or unlock user asset when commit a exchange or cancel exchange
 // args: json []{user, currency id, lock count, lock order}, islock, srcMethod
-func (c *ExchangeChaincode) lock() ([]byte, error) {
+func (c *ExchangeChaincode) lock() pb.Response {
 	myLogger.Debug("Lock Asset Balance...")
 
 	if len(c.args) != 3 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 3")
+		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
 
 	var lockInfos []struct {
@@ -309,7 +311,7 @@ func (c *ExchangeChaincode) lock() ([]byte, error) {
 	err := json.Unmarshal([]byte(c.args[0]), &lockInfos)
 	if err != nil {
 		myLogger.Errorf("lock error1:%s", err)
-		return nil, err
+		return shim.Error(err.Error())
 	}
 	islock, _ := strconv.ParseBool(c.args[1])
 
@@ -323,7 +325,7 @@ func (c *ExchangeChaincode) lock() ([]byte, error) {
 			continue
 		} else if errType == WorldStateErr {
 			myLogger.Errorf("lock error2:%s", err)
-			return nil, err
+			return shim.Error(err.Error())
 		}
 		successInfos = append(successInfos, v.OrderId)
 	}
@@ -332,22 +334,22 @@ func (c *ExchangeChaincode) lock() ([]byte, error) {
 	result, err := json.Marshal(&batch)
 	if err != nil {
 		myLogger.Errorf("lock error3:%s", err)
-		return nil, err
+		return shim.Error(err.Error())
 	}
 
 	c.stub.SetEvent(batch.EventName, result)
 
 	myLogger.Debug("Lock Asset Balance...done")
-	return nil, nil
+	return shim.Success(nil)
 }
 
 // exchange exchange asset
 // args: exchange order 1, exchange order 2
-func (c *ExchangeChaincode) exchange() ([]byte, error) {
+func (c *ExchangeChaincode) exchange() pb.Response {
 	myLogger.Debug("Exchange...")
 
 	if len(c.args) != 1 {
-		return nil, errors.New("Incorrect number of arguments. Expecting 1")
+		return shim.Error("Incorrect number of arguments. Expecting 1")
 	}
 
 	var exchangeOrders []struct {
@@ -357,7 +359,7 @@ func (c *ExchangeChaincode) exchange() ([]byte, error) {
 	err := json.Unmarshal([]byte(c.args[0]), &exchangeOrders)
 	if err != nil {
 		myLogger.Errorf("exchange error1:%s", err)
-		return nil, errors.New("Failed unmarshalling order")
+		return shim.Error("Failed unmarshalling order")
 	}
 
 	var successInfos []string
@@ -370,7 +372,7 @@ func (c *ExchangeChaincode) exchange() ([]byte, error) {
 
 		if buyOrder.SrcCurrency != sellOrder.DesCurrency ||
 			buyOrder.DesCurrency != sellOrder.SrcCurrency {
-			return nil, errors.New("The exchange is invalid")
+			return shim.Error("The exchange is invalid")
 		}
 
 		// check exchanged or not
@@ -383,6 +385,7 @@ func (c *ExchangeChaincode) exchange() ([]byte, error) {
 		if len(buyRow.Columns) > 0 {
 			// exchanged
 		}
+
 		sellRow, _, err := c.getTxLogByID(sellOrder.UUID)
 		if err != nil {
 			myLogger.Errorf("exchange error3:%s", err)
@@ -400,14 +403,14 @@ func (c *ExchangeChaincode) exchange() ([]byte, error) {
 			continue
 		} else if errType == WorldStateErr {
 			myLogger.Errorf("exchange error4:%s", err)
-			return nil, err
+			return shim.Error(err.Error())
 		}
 
 		// txlog
 		err = c.saveTxLog(&buyOrder, &sellOrder)
 		if err != nil {
 			myLogger.Errorf("exchange error5:%s", err)
-			return nil, err
+			return shim.Error(err.Error())
 		}
 
 		successInfos = append(successInfos, matchOrder)
@@ -417,10 +420,10 @@ func (c *ExchangeChaincode) exchange() ([]byte, error) {
 	result, err := json.Marshal(&batch)
 	if err != nil {
 		myLogger.Errorf("exchange error6:%s", err)
-		return nil, err
+		return shim.Error(err.Error())
 	}
 	c.stub.SetEvent(batch.EventName, result)
 
 	myLogger.Debug("Exchange...done")
-	return nil, nil
+	return shim.Success(nil)
 }

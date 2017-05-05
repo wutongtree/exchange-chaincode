@@ -8,19 +8,13 @@ import (
 	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
 
-type ReleaseLog struct {
-	Currency    string `json:"currency"`
-	Count       int64  `json:"cont"`
-	ReleaseTime int64  `json:"releaseTime"`
-}
-
 type Assign struct {
 	Currency   string `json:"currency`
 	Owner      string `json:"owner"`
 	Count      int64  `json:"count"`
 	AssignTime int64  `json:"assignTime"`
 }
-type AssignLog struct {
+type AssignLogs struct {
 	ToMe []*Assign `json:"toMe"`
 	MeTo []*Assign `json:"meTo"`
 }

@@ -1,10 +1,12 @@
 package main
 
 import (
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"time"
 
 	"github.com/hyperledger/fabric/core/chaincode/shim"
@@ -12,6 +14,7 @@ import (
 
 // Asset Asset
 type Asset struct {
+	UUID      string `json:"uuid"`
 	Owner     string `json:"owner"`
 	Currency  string `json:"currency"`
 	Count     int64  `json:"count"`
@@ -20,6 +23,7 @@ type Asset struct {
 
 // Currency Currency
 type Currency struct {
+	UUID       string `json:"uuid"`
 	ID         string `json:"id"`
 	Count      int64  `json:"count"`
 	LeftCount  int64  `json:"leftCount"`
@@ -39,12 +43,48 @@ var (
 	NoDataErr = errors.New("No row data")
 )
 
-func (c *ExchangeChaincode) saveAsset(asset *Asset) error {
+// type Key struct {
+// 	UUID string `json:"uuid"`
+// }
+
+// type stateOpt interface {
+// 	Put(stub shim.ChaincodeStubInterface, value interface{}) error
+// 	Get(stub shim.ChaincodeStubInterface) (interface{}, error)
+// }
+
+// func (k *Key) Put(stub shim.ChaincodeStubInterface, value interface{}) error {
+// 	b, err := json.Marshal(value)
+// 	if err != nil {
+// 		return err
+// 	}
+// 	return stub.PutState(k.UUID, b)
+// }
+
+// func (k *Key) Get(stub shim.ChaincodeStubInterface) (interface{}, error) {
+
+// }
+func (c *ExchangeChaincode) putAsset(asset *Asset) error {
+	if asset.UUID == "" {
+		asset.UUID = GenerateUUID()
+	}
 	r, err := json.Marshal(asset)
 	if err != nil {
 		return err
 	}
-	err = c.stub.PutState(asset.Owner+asset.Currency, r)
+
+	err = c.stub.PutState(asset.UUID, r)
+	if err != nil {
+		return err
+	}
+
+	indexName := "owner~currency~uuid"
+	indexKey, err := c.stub.CreateCompositeKey(indexName, []string{asset.Owner, asset.Currency, asset.UUID})
+	if err != nil {
+		return err
+	}
+
+	value := []byte{0x00}
+	err = c.stub.PutState(indexKey, value)
 	if err != nil {
 		return err
 	}
@@ -52,86 +92,176 @@ func (c *ExchangeChaincode) saveAsset(asset *Asset) error {
 	return nil
 }
 
-// getOwnerOneAsset
-func (c *ExchangeChaincode) getOwnerOneAsset(owner string, currency string) (shim.Row, *Asset, error) {
-	var asset *Asset
-
-	row, err := c.stub.GetRow(TableAssets, []shim.Column{
-		shim.Column{Value: &shim.Column_String_{String_: owner}},
-		shim.Column{Value: &shim.Column_String_{String_: currency}},
-	})
-
-	if len(row.Columns) > 0 {
-		asset = &Asset{
-			Owner:     row.Columns[0].GetString_(),
-			Currency:  row.Columns[1].GetString_(),
-			Count:     row.Columns[2].GetInt64(),
-			LockCount: row.Columns[3].GetInt64(),
-		}
+func (c *ExchangeChaincode) getAsset(key string) (*Asset, error) {
+	assetByte, err := c.stub.GetState(key)
+	if err != nil {
+		return nil, err
 	}
 
-	return row, asset, err
+	var asset *Asset
+	err = json.Unmarshal(assetByte, asset)
+	if err != nil {
+		return nil, err
+	}
+	return asset, nil
 }
 
-// saveReleaseLog
-func (c *ExchangeChaincode) saveReleaseLog(id string, count, now int64) error {
-	ok, err := c.stub.InsertRow(TableCurrencyReleaseLog,
-		shim.Row{
-			Columns: []*shim.Column{
-				&shim.Column{Value: &shim.Column_String_{String_: id}},
-				&shim.Column{Value: &shim.Column_Int64{Int64: count}},
-				&shim.Column{Value: &shim.Column_Int64{Int64: now}},
-			},
-		})
-	if !ok {
-		return errors.New("Currency was already releassed")
+// getOwnerOneAsset
+func (c *ExchangeChaincode) getOwnerOneAsset(owner, currency string) (*Asset, error) {
+	var asset *Asset
+
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("owner~currency~uuid", []string{owner, currency})
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	for resultsIterator.HasNext() {
+		responseRange, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		uuid := compositeKeyParts[2]
+		return c.getAsset(uuid)
 	}
 
-	return err
+	return nil, nil
+}
+
+// putCurrency putCurrency
+func (c *ExchangeChaincode) putCurrency(currency *Currency) error {
+	if currency.UUID == "" {
+		currency.UUID = GenerateUUID()
+	}
+	r, err := json.Marshal(currency)
+	if err != il {
+		return err
+	}
+
+	err = c.stub.PutState(currency.UUID, r)
+	if err != nil {
+		return err
+	}
+
+	indexName := "id~uuid"
+	indexKey, err := c.stub.CreateCompositeKey(indexName, []string{currency.ID, currency.UUID})
+	if err != nil {
+		return err
+	}
+
+	value := []byte{0x00}
+	err = c.stub.PutState(indexKey, value)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (c *ExchangeChaincode) getCurrency(key string) (*Currency, error) {
+	currByte, err := c.stub.GetState(key)
+	if err != nil {
+		return nil, err
+	}
+
+	var curr *Currency
+	err = json.Unmarshal(currByte, curr)
+	if err != nil {
+		return nil, err
+	}
+	return curr, nil
 }
 
 // getCurrencyByID
-func (c *ExchangeChaincode) getCurrencyByID(id string) (shim.Row, *Currency, error) {
+func (c *ExchangeChaincode) getCurrencyByID(id string) (*Currency, error) {
 	var currency *Currency
 
-	row, err := c.stub.GetRow(TableCurrency, []shim.Column{
-		shim.Column{Value: &shim.Column_String_{String_: id}},
-	})
-
-	if len(row.Columns) > 0 {
-		currency = &Currency{
-			ID:         row.Columns[0].GetString_(),
-			Count:      row.Columns[1].GetInt64(),
-			LeftCount:  row.Columns[2].GetInt64(),
-			Creator:    row.Columns[3].GetString_(),
-			CreateTime: row.Columns[4].GetInt64(),
-		}
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("id~uuid", []string{id})
+	if err != nil {
+		return nil, err
 	}
-	return row, currency, err
+	defer resultsIterator.Close()
+
+	for resultsIterator.HasNext() {
+		reponseRange, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(reponseRange.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		uuid := compositeKeyParts[1]
+		return c.getCurrency(uuid)
+	}
+
+	return nil, nil
+}
+
+type ReleaseLog struct {
+	UUID        string `json:"uuid"`
+	Currency    string `json:"currency"`
+	Count       int64  `json:"cont"`
+	ReleaseTime int64  `json:"releaseTime"`
+}
+
+// saveReleaseLog
+func (c *ExchangeChaincode) putReleaseLog(log *ReleaseLog) error {
+	if log.UUID == "" {
+		log.UUID = GenerateUUID()
+	}
+	r, err := json.Marshal(log)
+	if err != nil {
+		return err
+	}
+
+	err = c.stub.PutState(log.UUID, r)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type AssignLog struct {
+	UUID       string `json:"uuid"`
+	Currency   string `json:"currency"`
+	Owner      string `json:"owner"`
+	Count      int64  `json:"count"`
+	AssignTime int64  `json:"assignTime"`
 }
 
 // saveAssignLog
-func (c *ExchangeChaincode) saveAssignLog(id, reciver string, count int64) error {
-	_, err := c.stub.InsertRow(TableCurrencyAssignLog,
-		shim.Row{
-			Columns: []*shim.Column{
-				&shim.Column{Value: &shim.Column_String_{String_: id}},
-				&shim.Column{Value: &shim.Column_String_{String_: reciver}},
-				&shim.Column{Value: &shim.Column_Int64{Int64: count}},
-				&shim.Column{Value: &shim.Column_Int64{Int64: time.Now().Unix()}},
-			},
-		})
+func (c *ExchangeChaincode) putAssignLog(log *AssignLog) error {
+	if log.UUID == "" {
+		log.UUID = GenerateUUID()
+	}
+	r, err := json.Marshal(log)
+	if err != nil {
+		return err
+	}
 
-	return err
+	err = c.stub.PutState(log.UUID, r)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 // lockOrUnlockBalance lockOrUnlockBalance
 func (c *ExchangeChaincode) lockOrUnlockBalance(owner string, currency, order string, count int64, islock bool) (error, ErrType) {
-	row, asset, err := c.getOwnerOneAsset(owner, currency)
+	asset, err := c.getOwnerOneAsset(owner, currency)
 	if err != nil {
 		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", currency, err), CheckErr
 	}
-	if len(row.Columns) == 0 {
+	if asset == nil || asset.UUID == "" {
 		return fmt.Errorf("The user have not currency [%s]", currency), CheckErr
 	}
 	if islock && asset.Count < count {
@@ -548,4 +678,31 @@ func dealParam(function string, args []string) (string, []string) {
 	}
 
 	return string(function_b), args
+}
+
+// GenerateBytesUUID returns a UUID based on RFC 4122 returning the generated bytes
+func GenerateBytesUUID() []byte {
+	uuid := make([]byte, 16)
+	_, err := io.ReadFull(rand.Reader, uuid)
+	if err != nil {
+		panic(fmt.Sprintf("Error generating UUID: %s", err))
+	}
+
+	// variant bits; see section 4.1.1
+	uuid[8] = uuid[8]&^0xc0 | 0x80
+
+	// version 4 (pseudo-random); see section 4.1.3
+	uuid[6] = uuid[6]&^0xf0 | 0x40
+
+	return uuid
+}
+
+// GenerateUUID returns a UUID based on RFC 4122
+func GenerateUUID() string {
+	uuid := GenerateBytesUUID()
+	return idBytesToStr(uuid)
+}
+
+func idBytesToStr(id []byte) string {
+	return fmt.Sprintf("%x-%x-%x-%x-%x", id[0:4], id[4:6], id[6:8], id[8:10], id[10:])
 }
