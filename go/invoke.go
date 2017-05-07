@@ -121,6 +121,7 @@ func (c *ExchangeChaincode) create() pb.Response {
 	if count > 0 {
 		err = c.putReleaseLog(&ReleaseLog{
 			Currency:    id,
+			Releaser:    creator,
 			Count:       count,
 			ReleaseTime: now,
 		})
@@ -170,6 +171,7 @@ func (c *ExchangeChaincode) release() pb.Response {
 
 	err = c.putReleaseLog(&ReleaseLog{
 		Currency:    id,
+		Releaser:    curr.Creator,
 		Count:       count,
 		ReleaseTime: time.Now().Unix(),
 	})

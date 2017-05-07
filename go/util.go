@@ -1,5 +1,9 @@
 package main
 
+/*
+将符合key的put和get抽出来写一个方法，避免大量重复代码
+规范符合key的定义方法，以免造成重复，可以以结构名作为开头”Asset~owner~uuid“
+*/
 import (
 	"crypto/rand"
 	"encoding/base64"
@@ -9,8 +13,6 @@ import (
 	"io"
 	"strconv"
 	"time"
-
-	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
 
 // Asset Asset
@@ -44,26 +46,6 @@ var (
 	NoDataErr = errors.New("No row data")
 )
 
-// type Key struct {
-// 	UUID string `json:"uuid"`
-// }
-
-// type stateOpt interface {
-// 	Put(stub shim.ChaincodeStubInterface, value interface{}) error
-// 	Get(stub shim.ChaincodeStubInterface) (interface{}, error)
-// }
-
-// func (k *Key) Put(stub shim.ChaincodeStubInterface, value interface{}) error {
-// 	b, err := json.Marshal(value)
-// 	if err != nil {
-// 		return err
-// 	}
-// 	return stub.PutState(k.UUID, b)
-// }
-
-// func (k *Key) Get(stub shim.ChaincodeStubInterface) (interface{}, error) {
-
-// }
 func (c *ExchangeChaincode) putAsset(asset *Asset) error {
 	if asset.UUID == "" {
 		asset.UUID = GenerateUUID()
@@ -196,12 +178,30 @@ func (c *ExchangeChaincode) putCurrency(currency *Currency) error {
 	if err != nil {
 		return err
 	}
-
 	err = c.stub.PutState(indexKey, []byte{0x00})
 	if err != nil {
 		return err
 	}
 
+	indexKey = "currency~uuid"
+	indexKey, err = c.stub.CreateCompositeKey(indexName, []string{"currency", currency.UUID})
+	if err != nil {
+		return err
+	}
+	err = c.stub.PutState(indexKey, []byte{0x00})
+	if err != nil {
+		return err
+	}
+
+	indexKey = "owner~uuid"
+	indexKey, err = c.stub.CreateCompositeKey(indexName, []string{currency.Creator, currency.UUID})
+	if err != nil {
+		return err
+	}
+	err = c.stub.PutState(indexKey, []byte{0x00})
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -249,14 +249,9 @@ func (c *ExchangeChaincode) getCurrencyByID(id string) (*Currency, error) {
 
 // getAllCurrency
 func (c *ExchangeChaincode) getAllCurrency() ([]*Currency, error) {
-	rowChannel, err := c.stub.GetRows(TableCurrency, nil)
-	if err != nil {
-		return nil, nil, fmt.Errorf("getRows operation failed. %s", err)
-	}
-	var rows []shim.Row
-	var infos []*Currency
+	var currs []*Currency
 
-	resultsIterator, err := c.stub.GetStateByRange("", "")
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("currency~uuid", []string{"currency"})
 	if err != nil {
 		return nil, err
 	}
@@ -268,7 +263,45 @@ func (c *ExchangeChaincode) getAllCurrency() ([]*Currency, error) {
 			return nil, err
 		}
 
-		err = json.Unmarshal(responseRange.Value, curr)
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		uuid := compositeKeyParts[1]
+		curr, err := c.getCurrency(uuid)
+		if err != nil {
+			return nil, err
+		}
+		currs = append(currs, curr)
+	}
+
+	return currs, nil
+}
+
+// getMyCurrency
+func (c *ExchangeChaincode) getMyCurrency(owner string) ([]*Currency, error) {
+	var currs []*Currency
+
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("owner~uuid", []string{owner})
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	for resultsIterator.HasNext() {
+		responseRange, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		uuid := compositeKeyParts[1]
+		curr, err := c.getCurrency(uuid)
 		if err != nil {
 			return nil, err
 		}
@@ -281,6 +314,7 @@ func (c *ExchangeChaincode) getAllCurrency() ([]*Currency, error) {
 type ReleaseLog struct {
 	UUID        string `json:"uuid"`
 	Currency    string `json:"currency"`
+	Releaser    string `json:"releaser`
 	Count       int64  `json:"cont"`
 	ReleaseTime int64  `json:"releaseTime"`
 }
@@ -299,7 +333,62 @@ func (c *ExchangeChaincode) putReleaseLog(log *ReleaseLog) error {
 	if err != nil {
 		return err
 	}
+
+	indexKey := "ReleaseLog~owner~uuid"
+	indexName, err := c.stub.CreateCompositeKey(indexKey, []string{log.Releaser, log.UUID})
+	if err != nil {
+		return err
+	}
+	err = c.stub.PutState(indexKey, []byte{0x00})
+	if err != nil {
+		return err
+	}
 	return nil
+}
+
+func (c *ExchangeChaincode) getReleaseLog(key string) (*ReleaseLog, err) {
+	logByte, err := c.stub.GetState(key)
+	if err != nil {
+		return nil, err
+	}
+
+	var log *ReleaseLog
+	err := json.Unmarshal(logByte, log)
+	if err != nil {
+		return nil, err
+	}
+	return log, nil
+}
+
+func (c *ExchangeChaincode) getMyReleaseLog(owner string) ([]*ReleaseLog, err) {
+	var logs []*ReleaseLog
+
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("ReleaseLog~owner~uuid", []string{owner})
+	if err != nil {
+		return nil, err
+	}
+	defer resultsIterator.Close()
+
+	for resultsIterator.HasNext() {
+		responseRange, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
+		}
+
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		uuid := compositeKeyParts[2]
+		log, err := c.getReleaseLog(uuid)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, log)
+	}
+
+	return logs, nil
 }
 
 type AssignLog struct {
@@ -479,44 +568,42 @@ func (c *ExchangeChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrType) 
 	}
 
 	// buy order srcCurrency -
-	buySrcRow, buySrcAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.SrcCurrency)
+	buySrcAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.SrcCurrency)
 	if err != nil {
 		myLogger.Errorf("execTx error3:%s", err)
 		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", buyOrder.SrcCurrency, err), CheckErr
 	}
-	if len(buySrcRow.Columns) == 0 {
+	if buySrcAsset == nil || buySrcAsset.UUID == "" {
 		return fmt.Errorf("The user have not currency [%s]", buyOrder.SrcCurrency), CheckErr
 	}
-	buySrcRow.Columns[3].Value = &shim.Column_Int64{Int64: buySrcAsset.LockCount - buyOrder.FinalCost}
-	_, err = c.stub.ReplaceRow(TableAssets, buySrcRow)
+	buySrcAsset.LockCount = buySrcAsset.LockCount - buyOrder.FinalCost
+	err = c.putAsset(buySrcAsset)
 	if err != nil {
 		myLogger.Errorf("execTx error4:%s", err)
 		return errors.New("Failed updating row"), WorldStateErr
 	}
 
 	// buy order srcCurrency +
-	buyDesRow, buyDesAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.DesCurrency)
+	buyDesAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.DesCurrency)
 	if err != nil {
 		myLogger.Errorf("execTx error5:%s", err)
 		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", buyOrder.DesCurrency, err), CheckErr
 	}
-	if len(buyDesRow.Columns) == 0 {
-		_, err := c.stub.InsertRow(TableAssets,
-			shim.Row{
-				Columns: []*shim.Column{
-					&shim.Column{Value: &shim.Column_String_{String_: buyOrder.Account}},
-					&shim.Column{Value: &shim.Column_String_{String_: buyOrder.DesCurrency}},
-					&shim.Column{Value: &shim.Column_Int64{Int64: buyOrder.DesCount}},
-					&shim.Column{Value: &shim.Column_Int64{Int64: int64(0)}},
-				},
-			})
+	if buyDesAsset == nil || buyDesAsset.UUID == "" {
+		err = c.putAsset(&Asset{
+			Owner:     buyOrder.Account,
+			Currency:  buyOrder.DesCurrency,
+			Count:     buyOrder.DesCount,
+			LockCount: int64(0),
+		})
+
 		if err != nil {
 			myLogger.Errorf("execTx error6:%s", err)
 			return errors.New("Failed inserting row"), WorldStateErr
 		}
 	} else {
-		buyDesRow.Columns[2].Value = &shim.Column_Int64{Int64: buyDesAsset.Count + buyOrder.DesCount}
-		_, err = c.stub.ReplaceRow(TableAssets, buyDesRow)
+		buyDesAsset.Count = buyDesAsset.Count + buyOrder.DesCount
+		err = c.putAsset(buyDesAsset)
 		if err != nil {
 			myLogger.Errorf("execTx error7:%s", err)
 			return errors.New("Failed updating row"), WorldStateErr
@@ -541,44 +628,41 @@ func (c *ExchangeChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrType) 
 	}
 
 	// sell order srcCurrency -
-	sellSrcRow, sellSrcAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.SrcCurrency)
+	sellSrcAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.SrcCurrency)
 	if err != nil {
 		myLogger.Errorf("execTx error10:%s", err)
 		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", sellOrder.SrcCurrency, err), CheckErr
 	}
-	if len(sellSrcRow.Columns) == 0 {
+	if sellSrcAsset == nil || sellSrcAsset.UUID == "" {
 		return fmt.Errorf("The user have not currency [%s]", sellOrder.SrcCurrency), CheckErr
 	}
-	sellSrcRow.Columns[3].Value = &shim.Column_Int64{Int64: sellSrcAsset.LockCount - sellOrder.FinalCost}
-	_, err = c.stub.ReplaceRow(TableAssets, sellSrcRow)
+	sellSrcAsset.LockCount = sellSrcAsset.LockCount - sellOrder.FinalCost
+	err = c.putAsset(sellSrcAsset)
 	if err != nil {
 		myLogger.Errorf("execTx error11:%s", err)
 		return errors.New("Failed updating row"), WorldStateErr
 	}
 
 	// sell order desCurrency +
-	sellDesRow, sellDesAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.DesCurrency)
+	sellDesAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.DesCurrency)
 	if err != nil {
 		myLogger.Errorf("execTx error12:%s", err)
 		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", sellOrder.DesCurrency, err), CheckErr
 	}
-	if len(sellDesRow.Columns) == 0 {
-		_, err = c.stub.InsertRow(TableAssets,
-			shim.Row{
-				Columns: []*shim.Column{
-					&shim.Column{Value: &shim.Column_String_{String_: sellOrder.Account}},
-					&shim.Column{Value: &shim.Column_String_{String_: sellOrder.DesCurrency}},
-					&shim.Column{Value: &shim.Column_Int64{Int64: sellOrder.DesCount}},
-					&shim.Column{Value: &shim.Column_Int64{Int64: 0}},
-				},
-			})
+	if sellDesAsset == nil || sellDesAsset.UUID == "" {
+		err = c.putAsset(&Asset{
+			Owner:     sellOrder.Account,
+			Currency:  sellOrder.DesCurrency,
+			Count:     sellOrder.DesCount,
+			LockCount: int64(0),
+		})
 		if err != nil {
 			myLogger.Errorf("execTx error13:%s", err)
 			return errors.New("Failed inserting row"), WorldStateErr
 		}
 	} else {
-		sellDesRow.Columns[2].Value = &shim.Column_Int64{Int64: sellDesAsset.Count + sellOrder.DesCount}
-		_, err = c.stub.ReplaceRow(TableAssets, sellDesRow)
+		sellDesAsset.Count = sellDesAsset.Count + sellOrder.DesCount
+		err = c.putAsset(sellDesAsset)
 		if err != nil {
 			myLogger.Errorf("execTx error14:%s", err)
 			return errors.New("Failed updating row"), WorldStateErr
@@ -649,6 +733,16 @@ func (c *ExchangeChaincode) putTxLog(buyOrder, sellOrder *Order) error {
 	if err != nil {
 		return err
 	}
+
+	indexName = "order~uuid"
+	indexKey, err := c.stub.CreateCompositeKey(indexName, []string{"order", buyOrder.UUID})
+	if err != nil {
+		return err
+	}
+	err = c.stub.PutState(indexKey, []byte{0x00})
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -699,24 +793,32 @@ func (c *ExchangeChaincode) getTXs(owner, srcCurrency, desCurrency, rawOrder str
 	return orders, nil
 }
 
-// getMyCurrency
-func (c *ExchangeChaincode) getMyCurrency(owner string) ([]*Currency, error) {
-	_, infos, err := c.getAllCurrency()
+func (c *ExchangeChaincode) getAllTxLog() ([]*Order, err) {
+	var orders []*Order
+
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("order~uuid", []string("order"))
 	if err != nil {
 		return nil, err
 	}
-	if len(infos) == 0 {
-		return nil, NoDataErr
-	}
+	defer resultsIterator.Close()
 
-	var currencys []*Currency
-	for _, v := range infos {
-		if owner == v.Creator {
-			currencys = append(currencys, v)
+	for resultsIterator.HasNext() {
+		responseRange, err := resultsIterator.Next()
+		if err != nil {
+			return nil, err
 		}
+
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
+		if err != nil {
+			return nil, err
+		}
+
+		uuid := compositeKeyParts[1]
+		order, err := c.getTxLog(uuid)
+		orders = append(orders, order)
 	}
 
-	return currencys, nil
+	return orders, nil
 }
 
 func dealParam(function string, args []string) (string, []string) {

@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-
-	"github.com/hyperledger/fabric/core/chaincode/shim"
 )
 
 type Assign struct {
@@ -20,7 +18,7 @@ type AssignLogs struct {
 }
 
 // queryCurrency
-func (c *ExchangeChaincode) queryCurrencyByID() ([]byte, error) {
+func (c *ExchangeChaincode) queryCurrencyByID() pb.Response {
 	myLogger.Debug("queryCurrency...")
 
 	if len(c.args) != 1 {
@@ -42,7 +40,7 @@ func (c *ExchangeChaincode) queryCurrencyByID() ([]byte, error) {
 }
 
 // queryAllCurrency
-func (c *ExchangeChaincode) queryAllCurrency() ([]byte, error) {
+func (c *ExchangeChaincode) queryAllCurrency() pb.Response {
 	myLogger.Debug("queryCurrency...")
 
 	if len(c.args) != 0 {
@@ -61,44 +59,26 @@ func (c *ExchangeChaincode) queryAllCurrency() ([]byte, error) {
 }
 
 // queryTxLogs
-func (c *ExchangeChaincode) queryTxLogs() ([]byte, error) {
+func (c *ExchangeChaincode) queryTxLogs() pb.Response {
 	myLogger.Debug("queryTxLogs...")
 
 	if len(c.args) != 0 {
 		return nil, errors.New("Incorrect number of arguments. Expecting 0")
 	}
 
-	rowChannel, err := c.stub.GetRows(TableTxLog2, nil)
+	infos, err := c.getAllTxLog()
 	if err != nil {
-		myLogger.Errorf("queryTxLogs error1:%s", err)
-		return nil, fmt.Errorf("getRows operation failed. %s", err)
+		return nil, err
 	}
-
-	var infos []*Order
-	for {
-		select {
-		case row, ok := <-rowChannel:
-			if !ok {
-				rowChannel = nil
-			} else {
-				info := new(Order)
-				err = json.Unmarshal(row.Columns[1].GetBytes(), info)
-				if err == nil {
-					myLogger.Errorf("queryTxLogs error2:%s", err)
-					infos = append(infos, info)
-				}
-			}
-		}
-		if rowChannel == nil {
-			break
-		}
+	if len(infos) == 0 {
+		return nil, NoDataErr
 	}
 
 	return json.Marshal(&infos)
 }
 
 // queryAssetByOwner
-func (c *ExchangeChaincode) queryAssetByOwner() ([]byte, error) {
+func (c *ExchangeChaincode) queryAssetByOwner() pb.Response {
 	myLogger.Debug("queryAssetByOwner...")
 
 	if len(c.args) != 1 {
@@ -118,7 +98,7 @@ func (c *ExchangeChaincode) queryAssetByOwner() ([]byte, error) {
 }
 
 // queryMyCurrency
-func (c *ExchangeChaincode) queryMyCurrency() ([]byte, error) {
+func (c *ExchangeChaincode) queryMyCurrency() pb.Response {
 	myLogger.Debug("queryCurrency...")
 
 	if len(c.args) != 1 {
@@ -135,52 +115,23 @@ func (c *ExchangeChaincode) queryMyCurrency() ([]byte, error) {
 }
 
 // queryReleaseLog
-func (c *ExchangeChaincode) queryMyReleaseLog() ([]byte, error) {
+func (c *ExchangeChaincode) queryMyReleaseLog() pb.Response {
 	myLogger.Debug("queryMyReleaseLog...")
 
 	if len(c.args) != 1 {
 		return nil, errors.New("Incorrect number of arguments. Expecting 1")
 	}
 	owner := c.args[0]
-	currencys, err := c.getMyCurrency(owner)
+	logs, err := getMyReleaseLog(owner)
 	if err != nil {
 		return nil, err
-	}
-
-	var logs []*ReleaseLog
-	for _, v := range currencys {
-		rowChannel, err := c.stub.GetRows(TableCurrencyReleaseLog, []shim.Column{
-			shim.Column{Value: &shim.Column_String_{String_: v.ID}},
-		})
-		if err != nil {
-			continue
-		}
-
-		for {
-			select {
-			case row, ok := <-rowChannel:
-				if !ok {
-					rowChannel = nil
-				} else {
-					logs = append(logs,
-						&ReleaseLog{
-							Currency:    row.Columns[0].GetString_(),
-							Count:       row.Columns[1].GetInt64(),
-							ReleaseTime: row.Columns[2].GetInt64(),
-						})
-				}
-			}
-			if rowChannel == nil {
-				break
-			}
-		}
 	}
 
 	return json.Marshal(logs)
 }
 
 // queryMyAssignLog
-func (c *ExchangeChaincode) queryMyAssignLog() ([]byte, error) {
+func (c *ExchangeChaincode) queryMyAssignLog() pb.Response {
 	myLogger.Debug("queryAssignLog...")
 
 	if len(c.args) != 1 {
