@@ -99,8 +99,6 @@ func (c *ExchangeChaincode) getAsset(key string) (*Asset, error) {
 
 // getOwnerOneAsset
 func (c *ExchangeChaincode) getOwnerOneAsset(owner, currency string) (*Asset, error) {
-	var asset *Asset
-
 	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("owner~currency~uuid", []string{owner, currency})
 	if err != nil {
 		return nil, err
@@ -164,7 +162,7 @@ func (c *ExchangeChaincode) putCurrency(currency *Currency) error {
 		currency.UUID = GenerateUUID()
 	}
 	r, err := json.Marshal(currency)
-	if err != il {
+	if err != nil {
 		return err
 	}
 
@@ -183,7 +181,7 @@ func (c *ExchangeChaincode) putCurrency(currency *Currency) error {
 		return err
 	}
 
-	indexKey = "currency~uuid"
+	indexName = "currency~uuid"
 	indexKey, err = c.stub.CreateCompositeKey(indexName, []string{"currency", currency.UUID})
 	if err != nil {
 		return err
@@ -193,7 +191,7 @@ func (c *ExchangeChaincode) putCurrency(currency *Currency) error {
 		return err
 	}
 
-	indexKey = "owner~uuid"
+	indexName = "owner~uuid"
 	indexKey, err = c.stub.CreateCompositeKey(indexName, []string{currency.Creator, currency.UUID})
 	if err != nil {
 		return err
@@ -221,7 +219,7 @@ func (c *ExchangeChaincode) getCurrency(key string) (*Currency, error) {
 
 // getCurrencyByID
 func (c *ExchangeChaincode) getCurrencyByID(id string) (*Currency, error) {
-	var currency *Currency
+	// var currency *Currency
 
 	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("id~uuid", []string{id})
 	if err != nil {
@@ -334,8 +332,8 @@ func (c *ExchangeChaincode) putReleaseLog(log *ReleaseLog) error {
 		return err
 	}
 
-	indexKey := "ReleaseLog~owner~uuid"
-	indexName, err := c.stub.CreateCompositeKey(indexKey, []string{log.Releaser, log.UUID})
+	indexName := "ReleaseLog~owner~uuid"
+	indexKey, err := c.stub.CreateCompositeKey(indexName, []string{log.Releaser, log.UUID})
 	if err != nil {
 		return err
 	}
@@ -346,21 +344,21 @@ func (c *ExchangeChaincode) putReleaseLog(log *ReleaseLog) error {
 	return nil
 }
 
-func (c *ExchangeChaincode) getReleaseLog(key string) (*ReleaseLog, err) {
+func (c *ExchangeChaincode) getReleaseLog(key string) (*ReleaseLog, error) {
 	logByte, err := c.stub.GetState(key)
 	if err != nil {
 		return nil, err
 	}
 
 	var log *ReleaseLog
-	err := json.Unmarshal(logByte, log)
+	err = json.Unmarshal(logByte, log)
 	if err != nil {
 		return nil, err
 	}
 	return log, nil
 }
 
-func (c *ExchangeChaincode) getMyReleaseLog(owner string) ([]*ReleaseLog, err) {
+func (c *ExchangeChaincode) getMyReleaseLog(owner string) ([]*ReleaseLog, error) {
 	var logs []*ReleaseLog
 
 	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("ReleaseLog~owner~uuid", []string{owner})
@@ -414,6 +412,10 @@ func (c *ExchangeChaincode) putAssignLog(log *AssignLog) error {
 		return err
 	}
 	return nil
+}
+
+func (c *ExchangeChaincode) getMyAssignLog(owner string) ([]*AssignLog, error) {
+	return nil, nil
 }
 
 // lockOrUnlockBalance lockOrUnlockBalance
@@ -514,7 +516,7 @@ func (c *ExchangeChaincode) getLockLog(key string) (*LockLog, error) {
 	}
 
 	var log *LockLog
-	err = json.Unmarshal(logByte, curr)
+	err = json.Unmarshal(logByte, logByte)
 	if err != nil {
 		return nil, err
 	}
@@ -523,7 +525,7 @@ func (c *ExchangeChaincode) getLockLog(key string) (*LockLog, error) {
 
 // getLockLog getLockLog
 func (c *ExchangeChaincode) getLockLogByParm(owner, currency, order string, islock bool) (*LockLog, error) {
-	var log *LockLog
+	// var log *LockLog
 
 	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("owner~curr~order~islock~uuid", []string{owner, currency, order, strconv.FormatBool(islock)})
 	if err != nil {
@@ -725,7 +727,7 @@ func (c *ExchangeChaincode) putTxLog(buyOrder, sellOrder *Order) error {
 		return err
 	}
 
-	sellKey, err := c.stub.CreateCompositeKey(indexName, []string(sellOrder.Account, sellOrder.SrcCurrency, sellOrder.DesCurrency, sellOrder.RawUUID, sellOrder.UUID))
+	sellKey, err := c.stub.CreateCompositeKey(indexName, []string{sellOrder.Account, sellOrder.SrcCurrency, sellOrder.DesCurrency, sellOrder.RawUUID, sellOrder.UUID})
 	if err != nil {
 		return err
 	}
@@ -765,7 +767,7 @@ func (c *ExchangeChaincode) getTxLog(key string) (*Order, error) {
 func (c *ExchangeChaincode) getTXs(owner, srcCurrency, desCurrency, rawOrder string) ([]*Order, error) {
 	var orders []*Order
 
-	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("owner~src~des~raw~uuid", []string(owner, srcCurrency, desCurrency, rawOrder))
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("owner~src~des~raw~uuid", []string{owner, srcCurrency, desCurrency, rawOrder})
 	if err != nil {
 		return nil, err
 	}
@@ -793,10 +795,10 @@ func (c *ExchangeChaincode) getTXs(owner, srcCurrency, desCurrency, rawOrder str
 	return orders, nil
 }
 
-func (c *ExchangeChaincode) getAllTxLog() ([]*Order, err) {
+func (c *ExchangeChaincode) getAllTxLog() ([]*Order, error) {
 	var orders []*Order
 
-	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("order~uuid", []string("order"))
+	resultsIterator, err := c.stub.GetStateByPartialCompositeKey("order~uuid", []string{"order"})
 	if err != nil {
 		return nil, err
 	}
