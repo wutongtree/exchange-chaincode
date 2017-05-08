@@ -7,17 +7,6 @@ import (
 	pb "github.com/hyperledger/fabric/protos/peer"
 )
 
-type Assign struct {
-	Currency   string `json:"currency`
-	Owner      string `json:"owner"`
-	Count      int64  `json:"count"`
-	AssignTime int64  `json:"assignTime"`
-}
-type AssignLogs struct {
-	ToMe []*Assign `json:"toMe"`
-	MeTo []*Assign `json:"meTo"`
-}
-
 // queryCurrency
 func (c *ExchangeChaincode) queryCurrencyByID() pb.Response {
 	myLogger.Debug("queryCurrency...")
@@ -26,9 +15,9 @@ func (c *ExchangeChaincode) queryCurrencyByID() pb.Response {
 		return shim.Error("Incorrect number of arguments. Expecting 1")
 	}
 
-	id := c.args[0]
+	name := c.args[0]
 
-	currency, err := c.getCurrencyByID(id)
+	currency, err := c.getCurrencyByName(name)
 	if err != nil {
 		myLogger.Errorf("queryCurrencyByID error1:%s", err)
 		return shim.Error(err.Error())
@@ -168,49 +157,23 @@ func (c *ExchangeChaincode) queryMyAssignLog() pb.Response {
 		return shim.Error("Incorrect number of arguments. Expecting 1")
 	}
 	owner := c.args[0]
-	logs, err := c.getMyAssignLog(owner)
+	logToMe, err := c.getFromAssignLog(owner)
 	if err != nil {
 		return shim.Error(err.Error())
 	}
-	// currencys, err := c.getMyCurrency(owner)
-	// if err != nil {
-	// 	return nil, err
-	// }
 
-	// logs := &AssignLog{}
+	logMeTo, err := c.getToAssignLog(owner)
+	if err != nil {
+		return shim.Error(err.Error())
+	}
 
-	// rowChannel, err := c.stub.GetRows(TableCurrencyAssignLog, nil)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("getRows operation failed. %s", err)
-	// }
-
-	// for {
-	// 	select {
-	// 	case row, ok := <-rowChannel:
-	// 		if !ok {
-	// 			rowChannel = nil
-	// 		} else {
-	// 			assign := &Assign{
-	// 				Currency:   row.Columns[0].GetString_(),
-	// 				Owner:      row.Columns[1].GetString_(),
-	// 				Count:      row.Columns[2].GetInt64(),
-	// 				AssignTime: row.Columns[3].GetInt64(),
-	// 			}
-
-	// 			if assign.Owner == owner {
-	// 				logs.ToMe = append(logs.ToMe, assign)
-	// 			}
-	// 			for _, v := range currencys {
-	// 				if v.ID == assign.Currency {
-	// 					logs.MeTo = append(logs.MeTo, assign)
-	// 				}
-	// 			}
-	// 		}
-	// 	}
-	// 	if rowChannel == nil {
-	// 		break
-	// 	}
-	// }
+	logs := &struct {
+		ToMe []*AssignLog `json:"toMe"`
+		MeTo []*AssignLog `json:"meTo"`
+	}{
+		ToMe: logToMe,
+		MeTo: logMeTo,
+	}
 
 	payload, err := json.Marshal(logs)
 	if err != nil {

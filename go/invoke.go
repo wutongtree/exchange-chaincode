@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"time"
@@ -22,23 +23,17 @@ type BatchResult struct {
 	Fail      []FailInfo `json:"fail"`
 }
 
-type Order struct {
-	UUID         string `json:"uuid"`
-	Account      string `json:"account"`
-	SrcCurrency  string `json:"srcCurrency"`
-	SrcCount     int64  `json:"srcCount"`
-	DesCurrency  string `json:"desCurrency"`
-	DesCount     int64  `json:"desCount"`
-	IsBuyAll     bool   `json:"isBuyAll"`
-	ExpiredTime  int64  `json:"expiredTime"`
-	PendingTime  int64  `json:"PendingTime"`
-	PendedTime   int64  `json:"PendedTime"`
-	MatchedTime  int64  `json:"matchedTime"`
-	FinishedTime int64  `json:"finishedTime"`
-	RawUUID      string `json:"rawUUID"`
-	Metadata     string `json:"metadata"`
-	FinalCost    int64  `json:"finalCost"`
-}
+type ErrType string
+
+const (
+	CheckErr      = ErrType("CheckErr")
+	WorldStateErr = ErrType("WdErr")
+)
+
+var (
+	ExecedErr = errors.New("execed")
+	NoDataErr = errors.New("No row data")
+)
 
 // initAccount init account (CNY/USD currency) when user first login
 // args: user
@@ -101,13 +96,13 @@ func (c *ExchangeChaincode) create() pb.Response {
 		return shim.Error("Incorrect number of arguments. Expecting 3")
 	}
 
-	id := c.args[0]
+	name := c.args[0]
 	count, _ := strconv.ParseInt(c.args[1], 10, 64)
 	creator := c.args[2]
 	now := time.Now().Unix()
 
 	err := c.putCurrency(&Currency{
-		ID:         id,
+		Name:       name,
 		Count:      count,
 		LeftCount:  count,
 		Creator:    creator,
@@ -120,7 +115,7 @@ func (c *ExchangeChaincode) create() pb.Response {
 
 	if count > 0 {
 		err = c.putReleaseLog(&ReleaseLog{
-			Currency:    id,
+			Currency:    name,
 			Releaser:    creator,
 			Count:       count,
 			ReleaseTime: now,
@@ -154,7 +149,7 @@ func (c *ExchangeChaincode) release() pb.Response {
 		return shim.Error("Currency can't be CNY or USD")
 	}
 
-	curr, err := c.getCurrencyByID(id)
+	curr, err := c.getCurrencyByName(id)
 	if err != nil {
 		myLogger.Errorf("releaseCurrency error1:%s", err)
 		return shim.Error(fmt.Sprintf("Failed retrieving currency [%s]: [%s]", id, err))
@@ -211,7 +206,7 @@ func (c *ExchangeChaincode) assign() pb.Response {
 		return shim.Success(nil)
 	}
 
-	curr, err := c.getCurrencyByID(assign.Currency)
+	curr, err := c.getCurrencyByName(assign.Currency)
 	if err != nil {
 		myLogger.Errorf("assignCurrency error2:%s", err)
 		return shim.Error(fmt.Sprintf("Failed retrieving currency [%s]: [%s]", assign.Currency, err))
@@ -236,7 +231,8 @@ func (c *ExchangeChaincode) assign() pb.Response {
 
 		err = c.putAssignLog(&AssignLog{
 			Currency:   assign.Currency,
-			Owner:      v.Owner,
+			FromUser:   curr.Creator,
+			ToUser:     v.Owner,
 			Count:      v.Count,
 			AssignTime: time.Now().Unix(),
 		})
@@ -264,14 +260,6 @@ func (c *ExchangeChaincode) assign() pb.Response {
 	if err != nil {
 		return shim.Error(err.Error())
 	}
-	// if curr.LeftCount != currRow.Columns[2].GetInt64() {
-	// 	currRow.Columns[2].Value = &shim.Column_Int64{Int64: curr.LeftCount}
-	// 	_, err = c.stub.ReplaceRow(TableCurrency, currRow)
-	// 	if err != nil {
-	// 		myLogger.Errorf("assignCurrency error7:%s", err)
-	// 		return nil, err
-	// 	}
-	// }
 
 	myLogger.Debug("Assign Currency...done")
 	return shim.Success(nil)
@@ -411,4 +399,203 @@ func (c *ExchangeChaincode) exchange() pb.Response {
 
 	myLogger.Debug("Exchange...done")
 	return shim.Success(nil)
+}
+
+// execTx execTx
+func (c *ExchangeChaincode) execTx(buyOrder, sellOrder *Order) (error, ErrType) {
+	// UUID=rawuuID
+	if buyOrder.IsBuyAll && buyOrder.UUID == buyOrder.RawUUID {
+		unlock, err := c.computeBalance(buyOrder.Account, buyOrder.SrcCurrency, buyOrder.DesCurrency, buyOrder.RawUUID, buyOrder.FinalCost)
+		if err != nil {
+			myLogger.Errorf("execTx error1:%s", err)
+			return errors.New("Failed compute balance"), CheckErr
+		}
+		myLogger.Debugf("Order %s balance %d", buyOrder.UUID, unlock)
+		if unlock > 0 {
+			err, errType := c.lockOrUnlockBalance(buyOrder.Account, buyOrder.SrcCurrency, buyOrder.RawUUID, unlock, false)
+			if err != nil {
+				myLogger.Errorf("execTx error2:%s", err)
+				return errors.New("Failed unlock balance"), errType
+			}
+		}
+	}
+
+	// buy order srcCurrency -
+	buySrcAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.SrcCurrency)
+	if err != nil {
+		myLogger.Errorf("execTx error3:%s", err)
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", buyOrder.SrcCurrency, err), CheckErr
+	}
+	if buySrcAsset == nil || buySrcAsset.UUID == "" {
+		return fmt.Errorf("The user have not currency [%s]", buyOrder.SrcCurrency), CheckErr
+	}
+	buySrcAsset.LockCount = buySrcAsset.LockCount - buyOrder.FinalCost
+	err = c.putAsset(buySrcAsset)
+	if err != nil {
+		myLogger.Errorf("execTx error4:%s", err)
+		return errors.New("Failed updating row"), WorldStateErr
+	}
+
+	// buy order srcCurrency +
+	buyDesAsset, err := c.getOwnerOneAsset(buyOrder.Account, buyOrder.DesCurrency)
+	if err != nil {
+		myLogger.Errorf("execTx error5:%s", err)
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", buyOrder.DesCurrency, err), CheckErr
+	}
+	if buyDesAsset == nil || buyDesAsset.UUID == "" {
+		err = c.putAsset(&Asset{
+			Owner:     buyOrder.Account,
+			Currency:  buyOrder.DesCurrency,
+			Count:     buyOrder.DesCount,
+			LockCount: int64(0),
+		})
+
+		if err != nil {
+			myLogger.Errorf("execTx error6:%s", err)
+			return errors.New("Failed inserting row"), WorldStateErr
+		}
+	} else {
+		buyDesAsset.Count = buyDesAsset.Count + buyOrder.DesCount
+		err = c.putAsset(buyDesAsset)
+		if err != nil {
+			myLogger.Errorf("execTx error7:%s", err)
+			return errors.New("Failed updating row"), WorldStateErr
+		}
+	}
+
+	// UUID=rawuuid
+	if sellOrder.IsBuyAll && sellOrder.UUID == sellOrder.RawUUID {
+		unlock, err := c.computeBalance(sellOrder.Account, sellOrder.SrcCurrency, sellOrder.DesCurrency, sellOrder.RawUUID, sellOrder.FinalCost)
+		if err != nil {
+			myLogger.Errorf("execTx error8:%s", err)
+			return errors.New("Failed compute balance"), CheckErr
+		}
+		myLogger.Debugf("Order %s balance %d", sellOrder.UUID, unlock)
+		if unlock > 0 {
+			err, errType := c.lockOrUnlockBalance(sellOrder.Account, sellOrder.SrcCurrency, sellOrder.RawUUID, unlock, false)
+			if err != nil {
+				myLogger.Errorf("execTx error9:%s", err)
+				return errors.New("Failed unlock balance"), errType
+			}
+		}
+	}
+
+	// sell order srcCurrency -
+	sellSrcAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.SrcCurrency)
+	if err != nil {
+		myLogger.Errorf("execTx error10:%s", err)
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", sellOrder.SrcCurrency, err), CheckErr
+	}
+	if sellSrcAsset == nil || sellSrcAsset.UUID == "" {
+		return fmt.Errorf("The user have not currency [%s]", sellOrder.SrcCurrency), CheckErr
+	}
+	sellSrcAsset.LockCount = sellSrcAsset.LockCount - sellOrder.FinalCost
+	err = c.putAsset(sellSrcAsset)
+	if err != nil {
+		myLogger.Errorf("execTx error11:%s", err)
+		return errors.New("Failed updating row"), WorldStateErr
+	}
+
+	// sell order desCurrency +
+	sellDesAsset, err := c.getOwnerOneAsset(sellOrder.Account, sellOrder.DesCurrency)
+	if err != nil {
+		myLogger.Errorf("execTx error12:%s", err)
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", sellOrder.DesCurrency, err), CheckErr
+	}
+	if sellDesAsset == nil || sellDesAsset.UUID == "" {
+		err = c.putAsset(&Asset{
+			Owner:     sellOrder.Account,
+			Currency:  sellOrder.DesCurrency,
+			Count:     sellOrder.DesCount,
+			LockCount: int64(0),
+		})
+		if err != nil {
+			myLogger.Errorf("execTx error13:%s", err)
+			return errors.New("Failed inserting row"), WorldStateErr
+		}
+	} else {
+		sellDesAsset.Count = sellDesAsset.Count + sellOrder.DesCount
+		err = c.putAsset(sellDesAsset)
+		if err != nil {
+			myLogger.Errorf("execTx error14:%s", err)
+			return errors.New("Failed updating row"), WorldStateErr
+		}
+	}
+	return nil, ErrType("")
+}
+
+// computeBalance
+func (c *ExchangeChaincode) computeBalance(owner string, srcCurrency, desCurrency, rawUUID string, currentCost int64) (int64, error) {
+	txs, err := c.getTXs(owner, srcCurrency, desCurrency, rawUUID)
+	if err != nil {
+		return 0, err
+	}
+	lockLog, err := c.getLockLogByParm(owner, srcCurrency, rawUUID, true)
+	if err != nil {
+		return 0, err
+	}
+	if lockLog == nil || lockLog.UUID == "" {
+		return 0, errors.New("can't find lock log")
+	}
+
+	lock := lockLog.LockCount
+	sumCost := int64(0)
+	for _, tx := range txs {
+		sumCost += tx.FinalCost
+	}
+
+	return lock - sumCost - currentCost, nil
+}
+
+// lockOrUnlockBalance lockOrUnlockBalance
+func (c *ExchangeChaincode) lockOrUnlockBalance(owner string, currency, order string, count int64, islock bool) (error, ErrType) {
+	asset, err := c.getOwnerOneAsset(owner, currency)
+	if err != nil {
+		return fmt.Errorf("Failed retrieving asset [%s] of the user: [%s]", currency, err), CheckErr
+	}
+	if asset == nil || asset.UUID == "" {
+		return fmt.Errorf("The user have not currency [%s]", currency), CheckErr
+	}
+	if islock && asset.Count < count {
+		return fmt.Errorf("Currency [%s] of the user is insufficient", currency), CheckErr
+	} else if !islock && asset.LockCount < count {
+		return fmt.Errorf("Locked currency [%s] of the user is insufficient", currency), CheckErr
+	}
+
+	// check the order is locked/unlocked or not
+	lockLog, err := c.getLockLogByParm(owner, currency, order, islock)
+	if err != nil {
+		return err, CheckErr
+	}
+
+	if lockLog != nil && lockLog.UUID != "" {
+		return ExecedErr, CheckErr
+	}
+
+	if islock {
+		asset.Count = asset.Count - count
+		asset.LockCount = asset.LockCount + count
+	} else {
+		asset.Count = asset.Count + count
+		asset.LockCount = asset.LockCount - count
+	}
+
+	err = c.putAsset(asset)
+	if err != nil {
+		return err, WorldStateErr
+	}
+
+	err = c.putLockLog(&LockLog{
+		Owner:     owner,
+		Currency:  currency,
+		Order:     order,
+		IsLock:    islock,
+		LockCount: count,
+		LockTime:  time.Now().Unix(),
+	})
+	if err != nil {
+		return err, WorldStateErr
+	}
+
+	return nil, ErrType("")
 }

@@ -8,11 +8,6 @@ import (
 
 var myLogger = logging.MustGetLogger("exchange")
 
-const (
-	CNY = "CNY"
-	USD = "USD"
-)
-
 // ExchangeChaincode ExchangeChaincode
 type ExchangeChaincode struct {
 	stub shim.ChaincodeStubInterface
