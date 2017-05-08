@@ -5,43 +5,6 @@ import (
 	"strconv"
 )
 
-// Asset Asset
-type Asset struct {
-	UUID      string `json:"uuid"`
-	Owner     string `json:"owner"`
-	Currency  string `json:"currency"`
-	Count     int64  `json:"count"`
-	LockCount int64  `json:"lockCount"`
-}
-
-// Currency Currency
-type Currency struct {
-	UUID       string `json:"uuid"`
-	Name       string `json:"name"`
-	Count      int64  `json:"count"`
-	LeftCount  int64  `json:"leftCount"`
-	Creator    string `json:"creator"`
-	CreateTime int64  `json:"createTime"`
-}
-
-type Order struct {
-	UUID         string `json:"uuid"`
-	Account      string `json:"account"`
-	SrcCurrency  string `json:"srcCurrency"`
-	SrcCount     int64  `json:"srcCount"`
-	DesCurrency  string `json:"desCurrency"`
-	DesCount     int64  `json:"desCount"`
-	IsBuyAll     bool   `json:"isBuyAll"`
-	ExpiredTime  int64  `json:"expiredTime"`
-	PendingTime  int64  `json:"PendingTime"`
-	PendedTime   int64  `json:"PendedTime"`
-	MatchedTime  int64  `json:"matchedTime"`
-	FinishedTime int64  `json:"finishedTime"`
-	RawUUID      string `json:"rawUUID"`
-	Metadata     string `json:"metadata"`
-	FinalCost    int64  `json:"finalCost"`
-}
-
 var NilValue = []byte{0x00}
 
 func (c *ExchangeChaincode) putCompositeValue(indexName string, compositeValue []string) error {
@@ -86,6 +49,15 @@ func (c *ExchangeChaincode) getCompositeValue(indexName string, compositeValue [
 	}
 
 	return bb, nil
+}
+
+// Asset Asset
+type Asset struct {
+	UUID      string `json:"uuid"`
+	Owner     string `json:"owner"`
+	Currency  string `json:"currency"`
+	Count     int64  `json:"count"`
+	LockCount int64  `json:"lockCount"`
 }
 
 func (c *ExchangeChaincode) putAsset(asset *Asset) error {
@@ -162,6 +134,16 @@ func (c *ExchangeChaincode) getOwnerAllAsset(owner string) ([]*Asset, error) {
 	}
 
 	return assets, nil
+}
+
+// Currency Currency
+type Currency struct {
+	UUID       string `json:"uuid"`
+	Name       string `json:"name"`
+	Count      int64  `json:"count"`
+	LeftCount  int64  `json:"leftCount"`
+	Creator    string `json:"creator"`
+	CreateTime int64  `json:"createTime"`
 }
 
 // putCurrency putCurrency
@@ -465,6 +447,24 @@ func (c *ExchangeChaincode) getLockLogByParm(owner, currency, order string, islo
 		return nil, err
 	}
 	return log, nil
+}
+
+type Order struct {
+	UUID         string `json:"uuid"`
+	Account      string `json:"account"`
+	SrcCurrency  string `json:"srcCurrency"`
+	SrcCount     int64  `json:"srcCount"`
+	DesCurrency  string `json:"desCurrency"`
+	DesCount     int64  `json:"desCount"`
+	IsBuyAll     bool   `json:"isBuyAll"`
+	ExpiredTime  int64  `json:"expiredTime"`
+	PendingTime  int64  `json:"PendingTime"`
+	PendedTime   int64  `json:"PendedTime"`
+	MatchedTime  int64  `json:"matchedTime"`
+	FinishedTime int64  `json:"finishedTime"`
+	RawUUID      string `json:"rawUUID"`
+	Metadata     string `json:"metadata"`
+	FinalCost    int64  `json:"finalCost"`
 }
 
 // putTxLog
