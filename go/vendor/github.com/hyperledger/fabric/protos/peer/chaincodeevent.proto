@@ -13,30 +13,17 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
+syntax = "proto3";
+package protos;
+option java_package = "org.hyperledger.protos";
+option go_package = "github.com/hyperledger/fabric/protos/peer";
 
-package crypto
 
-import "crypto/rand"
-
-const (
-	// NonceSize is the default NonceSize
-	NonceSize = 24
-)
-
-// GetRandomBytes returns len random looking bytes
-func GetRandomBytes(len int) ([]byte, error) {
-	key := make([]byte, len)
-
-	// TODO: rand could fill less bytes then len
-	_, err := rand.Read(key)
-	if err != nil {
-		return nil, err
-	}
-
-	return key, nil
-}
-
-// GetRandomNonce returns a random byte array of length NonceSize
-func GetRandomNonce() ([]byte, error) {
-	return GetRandomBytes(NonceSize)
+//ChaincodeEvent is used for events and registrations that are specific to chaincode
+//string type - "chaincode"
+message ChaincodeEvent {
+      string chaincode_id = 1;
+      string tx_id = 2;
+      string event_name = 3;
+      bytes payload = 4;
 }

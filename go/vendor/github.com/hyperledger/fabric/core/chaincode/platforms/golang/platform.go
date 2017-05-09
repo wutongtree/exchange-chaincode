@@ -60,8 +60,8 @@ func decodeUrl(spec *pb.ChaincodeSpec) (string, error) {
 		urlLocation = spec.ChaincodeId.Path
 	}
 
-	if len(urlLocation) < 2 {
-		return "", errors.New("ChaincodeSpec's path/URL invalid")
+	if urlLocation == "" {
+		return "", errors.New("ChaincodeSpec's path/URL cannot be empty")
 	}
 
 	if strings.LastIndex(urlLocation, "/") == len(urlLocation)-1 {

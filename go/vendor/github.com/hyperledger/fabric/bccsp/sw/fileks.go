@@ -230,9 +230,6 @@ func (ks *fileBasedKeyStore) searchKeystoreForSKI(ski []byte) (k bccsp.Key, err 
 			continue
 		}
 		raw, err := ioutil.ReadFile(filepath.Join(ks.path, f.Name()))
-		if err != nil {
-			continue
-		}
 
 		key, err := utils.PEMtoPrivateKey(raw, ks.pwd)
 		if err != nil {

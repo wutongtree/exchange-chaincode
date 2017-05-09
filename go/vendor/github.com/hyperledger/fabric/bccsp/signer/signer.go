@@ -25,49 +25,54 @@ import (
 	"github.com/hyperledger/fabric/bccsp/utils"
 )
 
-// bccspCryptoSigner is the BCCSP-based implementation of a crypto.Signer
-type bccspCryptoSigner struct {
+// CryptoSigner is the BCCSP-based implementation of a crypto.Signer
+type CryptoSigner struct {
 	csp bccsp.BCCSP
 	key bccsp.Key
 	pk  interface{}
 }
 
-// New returns a new BCCSP-based crypto.Signer
-// for the given BCCSP instance and key.
-func New(csp bccsp.BCCSP, key bccsp.Key) (crypto.Signer, error) {
+// Init initializes this CryptoSigner.
+func (s *CryptoSigner) Init(csp bccsp.BCCSP, key bccsp.Key) error {
 	// Validate arguments
 	if csp == nil {
-		return nil, errors.New("bccsp instance must be different from nil.")
+		return errors.New("Invalid BCCSP. Nil.")
 	}
 	if key == nil {
-		return nil, errors.New("key must be different from nil.")
+		return errors.New("Invalid Key. Nil.")
 	}
 	if key.Symmetric() {
-		return nil, errors.New("key must be asymmetric.")
+		return errors.New("Invalid Key. Symmetric.")
 	}
 
 	// Marshall the bccsp public key as a crypto.PublicKey
 	pub, err := key.PublicKey()
 	if err != nil {
-		return nil, fmt.Errorf("failed getting public key [%s]", err)
+		return fmt.Errorf("Failed getting public key [%s]", err)
 	}
 
 	raw, err := pub.Bytes()
 	if err != nil {
-		return nil, fmt.Errorf("failed marshalling public key [%s]", err)
+		return fmt.Errorf("Failed marshalling public key [%s]", err)
 	}
 
 	pk, err := utils.DERToPublicKey(raw)
 	if err != nil {
-		return nil, fmt.Errorf("failed marshalling der to public key [%s]", err)
+		return fmt.Errorf("Failed marshalling public key [%s]", err)
 	}
 
-	return &bccspCryptoSigner{csp, key, pk}, nil
+	// Init fields
+	s.csp = csp
+	s.key = key
+	s.pk = pk
+
+	return nil
+
 }
 
 // Public returns the public key corresponding to the opaque,
 // private key.
-func (s *bccspCryptoSigner) Public() crypto.PublicKey {
+func (s *CryptoSigner) Public() crypto.PublicKey {
 	return s.pk
 }
 
@@ -84,6 +89,15 @@ func (s *bccspCryptoSigner) Public() crypto.PublicKey {
 // Note that when a signature of a hash of a larger message is needed,
 // the caller is responsible for hashing the larger message and passing
 // the hash (as digest) and the hash function (as opts) to Sign.
-func (s *bccspCryptoSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
-	return s.csp.Sign(s.key, digest, opts)
+func (s *CryptoSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) (signature []byte, err error) {
+	if opts == nil {
+		return s.csp.Sign(s.key, digest, nil)
+	}
+
+	so, ok := opts.(bccsp.SignerOpts)
+	if !ok {
+		return nil, errors.New("Invalid opts type. Expecting bccsp.SignerOpts")
+	}
+
+	return s.csp.Sign(s.key, digest, so)
 }

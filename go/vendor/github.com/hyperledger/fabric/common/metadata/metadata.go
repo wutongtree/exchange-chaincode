@@ -20,5 +20,3 @@ package metadata
 var Version string
 var BaseVersion string
 var BaseDockerLabel string
-var DockerNamespace string
-var BaseDockerNamespace string

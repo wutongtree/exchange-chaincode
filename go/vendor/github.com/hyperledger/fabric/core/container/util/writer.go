@@ -26,10 +26,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/hyperledger/fabric/common/flogging"
+	"github.com/op/go-logging"
 )
 
-var vmLogger = flogging.MustGetLogger("container")
+var vmLogger = logging.MustGetLogger("container")
 
 // These filetypes are excluded while creating the tar package sent to Docker
 // Generated .class and other temporary files can be excluded
@@ -149,7 +149,6 @@ func WriteStreamToPackage(is io.Reader, localpath string, packagepath string, tw
 	header.ModTime = zeroTime
 	header.ChangeTime = zeroTime
 	header.Name = packagepath
-	header.Mode = 0100644
 
 	if err = tw.WriteHeader(header); err != nil {
 		return fmt.Errorf("Error write header for (path: %s, oldname:%s,newname:%s,sz:%d) : %s", localpath, oldname, packagepath, header.Size, err)

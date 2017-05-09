@@ -506,7 +506,7 @@ func (handler *Handler) handleDelState(key string, txid string) error {
 	return errors.New("Incorrect chaincode message received")
 }
 
-func (handler *Handler) handleGetStateByRange(startKey, endKey string, txid string) (*pb.QueryResponse, error) {
+func (handler *Handler) handleGetStateByRange(startKey, endKey string, txid string) (*pb.QueryStateResponse, error) {
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
@@ -534,7 +534,7 @@ func (handler *Handler) handleGetStateByRange(startKey, endKey string, txid stri
 		// Success response
 		chaincodeLogger.Debugf("[%s]Received %s. Successfully got range", shorttxid(responseMsg.Txid), pb.ChaincodeMessage_RESPONSE)
 
-		rangeQueryResponse := &pb.QueryResponse{}
+		rangeQueryResponse := &pb.QueryStateResponse{}
 		unmarshalErr := proto.Unmarshal(responseMsg.Payload, rangeQueryResponse)
 		if unmarshalErr != nil {
 			chaincodeLogger.Errorf("[%s]unmarshall error", shorttxid(responseMsg.Txid))
@@ -554,7 +554,7 @@ func (handler *Handler) handleGetStateByRange(startKey, endKey string, txid stri
 	return nil, errors.New("Incorrect chaincode message received")
 }
 
-func (handler *Handler) handleQueryStateNext(id, txid string) (*pb.QueryResponse, error) {
+func (handler *Handler) handleQueryStateNext(id, txid string) (*pb.QueryStateResponse, error) {
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
@@ -582,11 +582,11 @@ func (handler *Handler) handleQueryStateNext(id, txid string) (*pb.QueryResponse
 		// Success response
 		chaincodeLogger.Debugf("[%s]Received %s. Successfully got range", shorttxid(responseMsg.Txid), pb.ChaincodeMessage_RESPONSE)
 
-		queryResponse := &pb.QueryResponse{}
+		queryResponse := &pb.QueryStateResponse{}
 		unmarshalErr := proto.Unmarshal(responseMsg.Payload, queryResponse)
 		if unmarshalErr != nil {
 			chaincodeLogger.Errorf("[%s]unmarshall error", shorttxid(responseMsg.Txid))
-			return nil, errors.New("Error unmarshalling QueryResponse.")
+			return nil, errors.New("Error unmarshalling QueryStateResponse.")
 		}
 
 		return queryResponse, nil
@@ -602,7 +602,7 @@ func (handler *Handler) handleQueryStateNext(id, txid string) (*pb.QueryResponse
 	return nil, errors.New("Incorrect chaincode message received")
 }
 
-func (handler *Handler) handleQueryStateClose(id, txid string) (*pb.QueryResponse, error) {
+func (handler *Handler) handleQueryStateClose(id, txid string) (*pb.QueryStateResponse, error) {
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
@@ -630,11 +630,11 @@ func (handler *Handler) handleQueryStateClose(id, txid string) (*pb.QueryRespons
 		// Success response
 		chaincodeLogger.Debugf("[%s]Received %s. Successfully got range", shorttxid(responseMsg.Txid), pb.ChaincodeMessage_RESPONSE)
 
-		queryResponse := &pb.QueryResponse{}
+		queryResponse := &pb.QueryStateResponse{}
 		unmarshalErr := proto.Unmarshal(responseMsg.Payload, queryResponse)
 		if unmarshalErr != nil {
 			chaincodeLogger.Errorf("[%s]unmarshall error", shorttxid(responseMsg.Txid))
-			return nil, errors.New("Error unmarshalling QueryResponse.")
+			return nil, errors.New("Error unmarshalling QueryStateResponse.")
 		}
 
 		return queryResponse, nil
@@ -650,7 +650,7 @@ func (handler *Handler) handleQueryStateClose(id, txid string) (*pb.QueryRespons
 	return nil, errors.New("Incorrect chaincode message received")
 }
 
-func (handler *Handler) handleGetQueryResult(query string, txid string) (*pb.QueryResponse, error) {
+func (handler *Handler) handleGetQueryResult(query string, txid string) (*pb.QueryStateResponse, error) {
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
@@ -678,11 +678,11 @@ func (handler *Handler) handleGetQueryResult(query string, txid string) (*pb.Que
 		// Success response
 		chaincodeLogger.Debugf("[%s]Received %s. Successfully got range", shorttxid(responseMsg.Txid), pb.ChaincodeMessage_RESPONSE)
 
-		executeQueryResponse := &pb.QueryResponse{}
+		executeQueryResponse := &pb.QueryStateResponse{}
 		unmarshalErr := proto.Unmarshal(responseMsg.Payload, executeQueryResponse)
 		if unmarshalErr != nil {
 			chaincodeLogger.Errorf("[%s]unmarshall error", shorttxid(responseMsg.Txid))
-			return nil, errors.New("Error unmarshalling QueryResponse.")
+			return nil, errors.New("Error unmarshalling QueryStateResponse.")
 		}
 
 		return executeQueryResponse, nil
@@ -698,7 +698,7 @@ func (handler *Handler) handleGetQueryResult(query string, txid string) (*pb.Que
 	return nil, errors.New("Incorrect chaincode message received")
 }
 
-func (handler *Handler) handleGetHistoryForKey(key string, txid string) (*pb.QueryResponse, error) {
+func (handler *Handler) handleGetHistoryForKey(key string, txid string) (*pb.QueryStateResponse, error) {
 	// Create the channel on which to communicate the response from validating peer
 	respChan, uniqueReqErr := handler.createChannel(txid)
 	if uniqueReqErr != nil {
@@ -726,11 +726,11 @@ func (handler *Handler) handleGetHistoryForKey(key string, txid string) (*pb.Que
 		// Success response
 		chaincodeLogger.Debugf("[%s]Received %s. Successfully got range", shorttxid(responseMsg.Txid), pb.ChaincodeMessage_RESPONSE)
 
-		getHistoryForKeyResponse := &pb.QueryResponse{}
+		getHistoryForKeyResponse := &pb.QueryStateResponse{}
 		unmarshalErr := proto.Unmarshal(responseMsg.Payload, getHistoryForKeyResponse)
 		if unmarshalErr != nil {
 			chaincodeLogger.Errorf("[%s]unmarshall error", shorttxid(responseMsg.Txid))
-			return nil, errors.New("Error unmarshalling QueryResponse.")
+			return nil, errors.New("Error unmarshalling QueryStateResponse.")
 		}
 
 		return getHistoryForKeyResponse, nil

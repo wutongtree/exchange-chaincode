@@ -17,27 +17,31 @@ package sw
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/hmac"
 	"crypto/rand"
-	"crypto/rsa"
-	"crypto/sha256"
-	"crypto/sha512"
-	"crypto/x509"
 	"errors"
 	"fmt"
-	"hash"
 	"math/big"
-	"reflect"
+
+	"crypto/rsa"
+
+	"hash"
+
+	"crypto/x509"
+
+	"crypto/hmac"
+
+	"crypto/elliptic"
+	"crypto/sha256"
+	"crypto/sha512"
 
 	"github.com/hyperledger/fabric/bccsp"
 	"github.com/hyperledger/fabric/bccsp/utils"
-	"github.com/hyperledger/fabric/common/flogging"
+	"github.com/op/go-logging"
 	"golang.org/x/crypto/sha3"
 )
 
 var (
-	logger = flogging.MustGetLogger("bccsp_sw")
+	logger = logging.MustGetLogger("SW_BCCSP")
 )
 
 // NewDefaultSecurityLevel returns a new instance of the software-based BCCSP
@@ -72,44 +76,13 @@ func New(securityLevel int, hashFamily string, keyStore bccsp.KeyStore) (bccsp.B
 		return nil, errors.New("Invalid bccsp.KeyStore instance. It must be different from nil.")
 	}
 
-	// Set the encryptors
-	encryptors := make(map[reflect.Type]Encryptor)
-	encryptors[reflect.TypeOf(&aesPrivateKey{})] = &aescbcpkcs7Encryptor{}
-
-	// Set the decryptors
-	decryptors := make(map[reflect.Type]Decryptor)
-	decryptors[reflect.TypeOf(&aesPrivateKey{})] = &aescbcpkcs7Decryptor{}
-
-	// Set the signers
-	signers := make(map[reflect.Type]Signer)
-	signers[reflect.TypeOf(&ecdsaPrivateKey{})] = &ecdsaSigner{}
-	signers[reflect.TypeOf(&rsaPrivateKey{})] = &rsaSigner{}
-
-	// Set the verifiers
-	verifiers := make(map[reflect.Type]Verifier)
-	verifiers[reflect.TypeOf(&ecdsaPrivateKey{})] = &ecdsaPrivateKeyVerifier{}
-	verifiers[reflect.TypeOf(&ecdsaPublicKey{})] = &ecdsaPublicKeyKeyVerifier{}
-	verifiers[reflect.TypeOf(&rsaPrivateKey{})] = &rsaPrivateKeyVerifier{}
-	verifiers[reflect.TypeOf(&rsaPublicKey{})] = &rsaPublicKeyKeyVerifier{}
-
-	return &impl{
-		conf:       conf,
-		ks:         keyStore,
-		encryptors: encryptors,
-		decryptors: decryptors,
-		signers:    signers,
-		verifiers:  verifiers}, nil
+	return &impl{conf, keyStore}, nil
 }
 
 // SoftwareBasedBCCSP is the software-based implementation of the BCCSP.
 type impl struct {
 	conf *config
 	ks   bccsp.KeyStore
-
-	encryptors map[reflect.Type]Encryptor
-	decryptors map[reflect.Type]Decryptor
-	signers    map[reflect.Type]Signer
-	verifiers  map[reflect.Type]Verifier
 }
 
 // KeyGen generates a key using opts.
@@ -607,7 +580,7 @@ func (csp *impl) KeyImport(raw interface{}, opts bccsp.KeyImportOpts) (k bccsp.K
 		}
 
 	default:
-		return nil, fmt.Errorf("Unsupported 'KeyImportOptions' provided [%v]", opts)
+		return nil, errors.New("Import Key Options not recognized")
 	}
 }
 
@@ -681,12 +654,19 @@ func (csp *impl) Sign(k bccsp.Key, digest []byte, opts bccsp.SignerOpts) (signat
 		return nil, errors.New("Invalid digest. Cannot be empty.")
 	}
 
-	signer, found := csp.signers[reflect.TypeOf(k)]
-	if !found {
-		return nil, fmt.Errorf("Unsupported 'SignKey' provided [%v]", k)
-	}
+	// Check key type
+	switch k.(type) {
+	case *ecdsaPrivateKey:
+		return csp.signECDSA(k.(*ecdsaPrivateKey).privKey, digest, opts)
+	case *rsaPrivateKey:
+		if opts == nil {
+			return nil, errors.New("Invalid options. Nil.")
+		}
 
-	return signer.Sign(k, digest, opts)
+		return k.(*rsaPrivateKey).privKey.Sign(rand.Reader, digest, opts)
+	default:
+		return nil, fmt.Errorf("Key type not recognized [%s]", k)
+	}
 }
 
 // Verify verifies signature against key k and digest
@@ -702,13 +682,43 @@ func (csp *impl) Verify(k bccsp.Key, signature, digest []byte, opts bccsp.Signer
 		return false, errors.New("Invalid digest. Cannot be empty.")
 	}
 
-	verifier, found := csp.verifiers[reflect.TypeOf(k)]
-	if !found {
-		return false, fmt.Errorf("Unsupported 'VerifyKey' provided [%v]", k)
+	// Check key type
+	switch k.(type) {
+	case *ecdsaPrivateKey:
+		return csp.verifyECDSA(&(k.(*ecdsaPrivateKey).privKey.PublicKey), signature, digest, opts)
+	case *ecdsaPublicKey:
+		return csp.verifyECDSA(k.(*ecdsaPublicKey).pubKey, signature, digest, opts)
+	case *rsaPrivateKey:
+		if opts == nil {
+			return false, errors.New("Invalid options. It must not be nil.")
+		}
+		switch opts.(type) {
+		case *rsa.PSSOptions:
+			err := rsa.VerifyPSS(&(k.(*rsaPrivateKey).privKey.PublicKey),
+				(opts.(*rsa.PSSOptions)).Hash,
+				digest, signature, opts.(*rsa.PSSOptions))
+
+			return err == nil, err
+		default:
+			return false, fmt.Errorf("Opts type not recognized [%s]", opts)
+		}
+	case *rsaPublicKey:
+		if opts == nil {
+			return false, errors.New("Invalid options. It must not be nil.")
+		}
+		switch opts.(type) {
+		case *rsa.PSSOptions:
+			err := rsa.VerifyPSS(k.(*rsaPublicKey).pubKey,
+				(opts.(*rsa.PSSOptions)).Hash,
+				digest, signature, opts.(*rsa.PSSOptions))
+
+			return err == nil, err
+		default:
+			return false, fmt.Errorf("Opts type not recognized [%s]", opts)
+		}
+	default:
+		return false, fmt.Errorf("Key type not recognized [%s]", k)
 	}
-
-	return verifier.Verify(k, signature, digest, opts)
-
 }
 
 // Encrypt encrypts plaintext using key k.
@@ -719,12 +729,20 @@ func (csp *impl) Encrypt(k bccsp.Key, plaintext []byte, opts bccsp.EncrypterOpts
 		return nil, errors.New("Invalid Key. It must not be nil.")
 	}
 
-	encryptor, found := csp.encryptors[reflect.TypeOf(k)]
-	if !found {
-		return nil, fmt.Errorf("Unsupported 'EncryptKey' provided [%v]", k)
+	// Check key type
+	switch k.(type) {
+	case *aesPrivateKey:
+		// check for mode
+		switch opts.(type) {
+		case *bccsp.AESCBCPKCS7ModeOpts, bccsp.AESCBCPKCS7ModeOpts:
+			// AES in CBC mode with PKCS7 padding
+			return AESCBCPKCS7Encrypt(k.(*aesPrivateKey).privKey, plaintext)
+		default:
+			return nil, fmt.Errorf("Mode not recognized [%s]", opts)
+		}
+	default:
+		return nil, fmt.Errorf("Key type not recognized [%s]", k)
 	}
-
-	return encryptor.Encrypt(k, plaintext, opts)
 }
 
 // Decrypt decrypts ciphertext using key k.
@@ -735,10 +753,18 @@ func (csp *impl) Decrypt(k bccsp.Key, ciphertext []byte, opts bccsp.DecrypterOpt
 		return nil, errors.New("Invalid Key. It must not be nil.")
 	}
 
-	decryptor, found := csp.decryptors[reflect.TypeOf(k)]
-	if !found {
-		return nil, fmt.Errorf("Unsupported 'DecryptKey' provided [%v]", k)
+	// Check key type
+	switch k.(type) {
+	case *aesPrivateKey:
+		// check for mode
+		switch opts.(type) {
+		case *bccsp.AESCBCPKCS7ModeOpts, bccsp.AESCBCPKCS7ModeOpts:
+			// AES in CBC mode with PKCS7 padding
+			return AESCBCPKCS7Decrypt(k.(*aesPrivateKey).privKey, ciphertext)
+		default:
+			return nil, fmt.Errorf("Mode not recognized [%s]", opts)
+		}
+	default:
+		return nil, fmt.Errorf("Key type not recognized [%s]", k)
 	}
-
-	return decryptor.Decrypt(k, ciphertext, opts)
 }

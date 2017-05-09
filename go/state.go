@@ -30,12 +30,12 @@ func (c *ExchangeChaincode) getCompositeValue(indexName string, compositeValue [
 	defer resultsIterator.Close()
 
 	for resultsIterator.HasNext() {
-		responseRange, err := resultsIterator.Next()
+		compositeKey, _, err := resultsIterator.Next()
 		if err != nil {
 			return nil, err
 		}
 
-		_, compositeKeyParts, err := c.stub.SplitCompositeKey(responseRange.Key)
+		_, compositeKeyParts, err := c.stub.SplitCompositeKey(compositeKey)
 		if err != nil {
 			return nil, err
 		}

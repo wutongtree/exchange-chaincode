@@ -20,8 +20,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/hyperledger/fabric/core/crypto/primitives"
 	cb "github.com/hyperledger/fabric/protos/common"
-	pb "github.com/hyperledger/fabric/protos/peer"
 
 	"errors"
 
@@ -44,19 +44,19 @@ func Marshal(pb proto.Message) ([]byte, error) {
 	return proto.Marshal(pb)
 }
 
-// CreateNonceOrPanic generates a nonce using the common/crypto package
+// CreateNonceOrPanic generates a nonce using the crypto/primitives package
 // and panics if this operation fails.
 func CreateNonceOrPanic() []byte {
-	nonce, err := crypto.GetRandomNonce()
+	nonce, err := primitives.GetRandomNonce()
 	if err != nil {
 		panic(fmt.Errorf("Cannot generate random nonce: %s", err))
 	}
 	return nonce
 }
 
-// CreateNonce generates a nonce using the common/crypto package.
+// CreateNonce generates a nonce using the crypto/primitives package.
 func CreateNonce() ([]byte, error) {
-	nonce, err := crypto.GetRandomNonce()
+	nonce, err := primitives.GetRandomNonce()
 	if err != nil {
 		return nil, fmt.Errorf("Cannot generate random nonce: %s", err)
 	}
@@ -247,15 +247,4 @@ func UnmarshalChannelHeader(bytes []byte) (*cb.ChannelHeader, error) {
 	}
 
 	return chdr, nil
-}
-
-// UnmarshalChaincodeID returns a ChaincodeID from bytes
-func UnmarshalChaincodeID(bytes []byte) (*pb.ChaincodeID, error) {
-	ccid := &pb.ChaincodeID{}
-	err := proto.Unmarshal(bytes, ccid)
-	if err != nil {
-		return nil, fmt.Errorf("UnmarshalChaincodeID failed, err %s", err)
-	}
-
-	return ccid, nil
 }

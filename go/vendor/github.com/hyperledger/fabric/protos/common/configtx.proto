@@ -20,7 +20,6 @@ import "common/common.proto";
 import "common/policies.proto";
 
 option go_package = "github.com/hyperledger/fabric/protos/common";
-option java_package = "org.hyperledger.fabric.protos.common";
 
 package common;
 
@@ -65,7 +64,6 @@ message ConfigPolicySchema {}
 message Config {
     uint64 sequence = 1;
     ConfigGroup channel_group = 2;
-    bool new_channel = 3;
 }
 
 message ConfigUpdateEnvelope {

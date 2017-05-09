@@ -13,24 +13,30 @@ WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 See the License for the specific language governing permissions and
 limitations under the License.
 */
-syntax = "proto3";
 
-option go_package = "github.com/hyperledger/fabric/protos/peer";
+package primitives
 
-package protos;
+import "crypto/rand"
 
-import "peer/proposal.proto";
-import "peer/proposal_response.proto";
+const (
+	// NonceSize is the default NonceSize
+	NonceSize = 24
+)
 
-message PeerID {
-    string name = 1;
+// GetRandomBytes returns len random looking bytes
+func GetRandomBytes(len int) ([]byte, error) {
+	key := make([]byte, len)
+
+	// TODO: rand could fill less bytes then len
+	_, err := rand.Read(key)
+	if err != nil {
+		return nil, err
+	}
+
+	return key, nil
 }
 
-message PeerEndpoint {
-    PeerID id = 1;
-    string address = 2;
-}
-
-service Endorser {
-	rpc ProcessProposal(SignedProposal) returns (ProposalResponse) {}
+// GetRandomNonce returns a random byte array of length NonceSize
+func GetRandomNonce() ([]byte, error) {
+	return GetRandomBytes(NonceSize)
 }

@@ -28,14 +28,13 @@ import (
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/grpclog"
 
-	"github.com/hyperledger/fabric/common/flogging"
-	"github.com/hyperledger/fabric/core/config"
+	"github.com/op/go-logging"
 	"github.com/spf13/viper"
 )
 
 const defaultTimeout = time.Second * 3
 
-var commLogger = flogging.MustGetLogger("comm")
+var commLogger = logging.MustGetLogger("comm")
 var caSupport *CASupport
 var once sync.Once
 
@@ -93,32 +92,6 @@ func (cas *CASupport) GetDeliverServiceCredentials() credentials.TransportCreden
 	var certPool = x509.NewCertPool()
 	// loop through the orderer CAs
 	_, roots := cas.GetServerRootCAs()
-	for _, root := range roots {
-		block, _ := pem.Decode(root)
-		if block != nil {
-			cert, err := x509.ParseCertificate(block.Bytes)
-			if err == nil {
-				certPool.AddCert(cert)
-			} else {
-				commLogger.Warningf("Failed to add root cert to credentials (%s)", err)
-			}
-		} else {
-			commLogger.Warning("Failed to add root cert to credentials")
-		}
-	}
-	tlsConfig.RootCAs = certPool
-	creds = credentials.NewTLS(tlsConfig)
-	return creds
-}
-
-// GetPeerCredentials returns GRPC transport credentials for use by GRPC
-// clients which communicate with remote peer endpoints.
-func (cas *CASupport) GetPeerCredentials() credentials.TransportCredentials {
-	var creds credentials.TransportCredentials
-	var tlsConfig = &tls.Config{}
-	var certPool = x509.NewCertPool()
-	// loop through the orderer CAs
-	roots, _ := cas.GetServerRootCAs()
 	for _, root := range roots {
 		block, _ := pem.Decode(root)
 		if block != nil {
@@ -201,9 +174,9 @@ func InitTLSForPeer() credentials.TransportCredentials {
 		sn = viper.GetString("peer.tls.serverhostoverride")
 	}
 	var creds credentials.TransportCredentials
-	if config.GetPath("peer.tls.rootcert.file") != "" {
+	if viper.GetString("peer.tls.rootcert.file") != "" {
 		var err error
-		creds, err = credentials.NewClientTLSFromFile(config.GetPath("peer.tls.rootcert.file"), sn)
+		creds, err = credentials.NewClientTLSFromFile(viper.GetString("peer.tls.rootcert.file"), sn)
 		if err != nil {
 			grpclog.Fatalf("Failed to create TLS credentials %v", err)
 		}

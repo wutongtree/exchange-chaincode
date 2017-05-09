@@ -17,8 +17,7 @@ limitations under the License.
 
 syntax = "proto3";
 
-option go_package = "github.com/hyperledger/fabric/protos/msp";
-option java_package = "org.hyperledger.fabric.protos.common";
+option go_package = "github.com/hyperledger/fabric/protos/common";
 
 package common;
 
@@ -113,7 +112,7 @@ message MSPRole {
 
     // MSPRoleType defines which of the available, pre-defined MSP-roles
     // an identiy should posess inside the MSP with identifier MSPidentifier
-    MSPRoleType role = 2;
+    MSPRoleType Role = 2;
 
 }
 
