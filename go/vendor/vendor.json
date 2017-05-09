@@ -285,5 +285,5 @@
 			"revisionTime": "2017-02-24T02:47:44Z"
 		}
 	],
-	"rootPath": "github.com/wutongtree/externality-chaincode/go"
+	"rootPath": "github.com/wutongtree/exchange-chaincode/go"
 }
