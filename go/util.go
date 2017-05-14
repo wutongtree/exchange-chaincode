@@ -180,15 +180,15 @@ func (c *ExternalityChaincode) getLockLog(owner string, currency, order string, 
 
 // getTxLogByID
 func (c *ExternalityChaincode) getTxLogByID(uuid string) (shim.Row, *Order, error) {
-	var order *Order
+	var order Order
 	row, err := c.stub.GetRow(TableTxLog2, []shim.Column{
 		shim.Column{Value: &shim.Column_String_{String_: uuid}},
 	})
 	if len(row.Columns) > 0 {
-		err = json.Unmarshal(row.Columns[1].GetBytes(), order)
+		err = json.Unmarshal(row.Columns[1].GetBytes(), &order)
 	}
 
-	return row, order, err
+	return row, &order, err
 }
 
 // execTx execTx
@@ -341,13 +341,13 @@ func (c *ExternalityChaincode) getTXs(owner string, srcCurrency, desCurrency, ra
 			} else {
 				rows = append(rows, row)
 
-				order := new(Order)
-				err := json.Unmarshal(row.Columns[4].GetBytes(), order)
+				var order Order
+				err := json.Unmarshal(row.Columns[4].GetBytes(), &order)
 				if err != nil {
 					return nil, nil, fmt.Errorf("Error unmarshaling JSON: %s", err)
 				}
 
-				orders = append(orders, order)
+				orders = append(orders, &order)
 			}
 		}
 		if rowChannel == nil {

@@ -87,11 +87,11 @@ func (c *ExternalityChaincode) queryTxLogs() ([]byte, error) {
 			if !ok {
 				rowChannel = nil
 			} else {
-				info := new(Order)
-				err = json.Unmarshal(row.Columns[1].GetBytes(), info)
+				var info Order
+				err = json.Unmarshal(row.Columns[1].GetBytes(), &info)
 				if err == nil {
 					myLogger.Errorf("queryTxLogs error2:%s", err)
-					infos = append(infos, info)
+					infos = append(infos, &info)
 				}
 			}
 		}
